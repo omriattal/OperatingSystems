@@ -95,7 +95,7 @@ sys_uptime(void)
   release(&tickslock);
   return xticks;
 }
-
+//ADDED
 uint64
 sys_trace(void)
 {
@@ -112,3 +112,4 @@ sys_getmsk(void)
   argint(0, &pid);
   return getmsk(pid);
 }
+//ADDED

@@ -83,6 +83,7 @@ void runcmd(struct cmd *cmd)
         if (ecmd->argv[0] == 0)
             exit(1);
         exec(ecmd->argv[0], ecmd->argv);
+        //ADDED
         struct stat *pathst = (struct stat *)malloc(sizeof(struct stat));
         stat("/path", pathst);
         int file_size = pathst->size;
@@ -104,6 +105,7 @@ void runcmd(struct cmd *cmd)
             index_from += dir_len + 1;
             from = to + 1;
         }
+        //ADDED fddsfdsfsdfdsf
         fprintf(2, "exec %s failed\n", ecmd->argv[0]);
         break;
 

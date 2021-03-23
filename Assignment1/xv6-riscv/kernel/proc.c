@@ -308,7 +308,9 @@ fork(void)
 
   acquire(&wait_lock);
   np->parent = p;
-  np->trace_mask = p->trace_mask; // * we added this
+  np->trace_mask = p->trace_mask; //ADDED
+  np->ctime = p->ctime + p->stime + p->retime + p->rutime;
+  np->ttime = -1;
   release(&wait_lock);
 
   acquire(&np->lock);
@@ -654,6 +656,7 @@ procdump(void)
     printf("\n");
   }
 }
+//ADDED
 int trace(int mask, int pid) {
   struct proc* p;
   for(p = proc; p < &proc[NPROC]; p++){
@@ -684,4 +687,41 @@ int getmsk(int pid) {
   }
 
   return -1;
+}
+
+// ADDED
+int update_pref(uint tick, struct proc *p) {
+  switch (p->state)
+  {
+  case RUNNING:
+    p->rutime++;
+    break;
+  case SLEEPING:
+    p->stime++;
+    break;
+  case RUNNABLE:
+    p->retime++;
+    break;
+  case ZOMBIE:
+    if(p->ttime == -1) p->ttime = tick;
+    break;
+  default:
+    break;
+  }
+
+}
+
+// ADDED
+int update_prefs(uint tick) {
+   struct proc *p;
+
+  for(p = proc; p < &proc[NPROC]; p++){
+    acquire(&p->lock);
+      if(p->state == SLEEPING){
+        // Wake process from sleep().
+      }
+    release(&p->lock);
+  }
+  return -1;
+
 }
