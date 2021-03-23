@@ -95,3 +95,20 @@ sys_uptime(void)
   release(&tickslock);
   return xticks;
 }
+
+uint64
+sys_trace(void)
+{
+  int mask,pid;
+  argint(0, &mask);
+  argint(1, &pid);
+  trace(mask,pid);
+  return 0;
+}
+uint64
+sys_getmsk(void)
+{
+  int pid;
+  argint(0, &pid);
+  return getmsk(pid);
+}

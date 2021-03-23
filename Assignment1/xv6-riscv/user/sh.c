@@ -91,7 +91,7 @@ void runcmd(struct cmd *cmd)
         read(pathfd, buffer, file_size);
         close(pathfd);
         char *from = buffer;
-        int index_from = 0;
+        int index_from = 0; 
         while (index_from < file_size)
         {
             char *to = strchr(from, PATHSEP); //will get us the string that starts with :

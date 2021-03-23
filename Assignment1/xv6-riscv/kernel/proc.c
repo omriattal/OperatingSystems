@@ -288,7 +288,6 @@ fork(void)
     return -1;
   }
   np->sz = p->sz;
-
   // copy saved user registers.
   *(np->trapframe) = *(p->trapframe);
 
@@ -309,6 +308,7 @@ fork(void)
 
   acquire(&wait_lock);
   np->parent = p;
+  np->trace_mask = p->trace_mask; // * we added this
   release(&wait_lock);
 
   acquire(&np->lock);
@@ -653,4 +653,35 @@ procdump(void)
     printf("%d %s %s", p->pid, state, p->name);
     printf("\n");
   }
+}
+int trace(int mask, int pid) {
+  struct proc* p;
+  for(p = proc; p < &proc[NPROC]; p++){
+    acquire(&p->lock);
+    if(p->pid == pid){
+      p->trace_mask = mask;
+      release(&p->lock);
+      return 0;
+    }
+    release(&p->lock);
+  }
+
+  return -1;
+}
+
+int getmsk(int pid) {
+  struct proc* p;
+  int mask;
+
+  for(p = proc; p < &proc[NPROC]; p++){
+    acquire(&p->lock);
+    if(p->pid == pid){
+      mask = p->trace_mask;
+      release(&p->lock);
+      return mask;
+    }
+    release(&p->lock);
+  }
+
+  return -1;
 }
