@@ -83,6 +83,7 @@ void runcmd(struct cmd *cmd)
         if (ecmd->argv[0] == 0)
             exit(1);
         exec(ecmd->argv[0], ecmd->argv);
+        
         //ADDED
         struct stat *pathst = (struct stat *)malloc(sizeof(struct stat));
         stat("/path", pathst);

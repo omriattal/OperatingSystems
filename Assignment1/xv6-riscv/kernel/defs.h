@@ -1,4 +1,4 @@
-                                    struct buf;
+struct buf;
 struct context;
 struct file;
 struct inode;
@@ -108,7 +108,9 @@ void            procdump(void);
 //ADDED
 int             trace(int mask, int pid);
 int             getmsk(int pid);
+int             wait_stat(uint64 status, uint64 performance);
 //ADDED
+
 // swtch.S
 void            swtch(struct context*, struct context*);
 

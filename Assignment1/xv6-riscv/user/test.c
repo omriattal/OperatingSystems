@@ -1,26 +1,21 @@
 #include "kernel/types.h"
-#include "kernel/fcntl.h"
-#include "kernel/stat.h"
-#include "kernel/syscall.h"
 #include "user.h"
+
+struct perf
+{
+	int ctime;		 // ADDED: creation time
+	int ttime;		 // ADDED: termination time
+	int stime;		 // ADDED: total time process spent in SLEEPING state
+	int retime;		 // ADDED: total time process spent in RUNNABLE state
+	int rutime;		 // ADDED: total time process spent in RUNNING state
+	float bursttime; // ADDED: approximate estimated burst time
+};
 
 int main(void)
 {
-    int mask = (1 << SYS_fork) | (1 << SYS_kill) | (1 << SYS_sbrk) | (1 << SYS_write);
-    int fd, pid;
-    trace(mask, getpid());
-    fd = open("output", O_RDWR | O_CREATE);
-    write(fd, "This is a test\n", 15);
-    close(fd);
-    sbrk(4096);
-    pid = fork();
-    if (pid > 0)
-        kill(pid);
-    else
-    {
-        sleep(5);
-        printf("shouldn't print\n");
-    }
-
+    int a = 5;
+    struct perf performance;
+    int hi = wait_stat(&a, &performance);
+    printf("the number seven is denoted as: %d and does not actually exist!!!\n",hi);
     exit(0);
 }

@@ -22,4 +22,5 @@
 #define SYS_close  21
 #define SYS_trace  22 //ADDED
 #define SYS_getmsk 23 //ADDED
+#define SYS_wait_stat 24 //ADDED
 

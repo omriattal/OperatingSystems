@@ -38,4 +38,4 @@ entry("sleep");
 entry("uptime");
 entry("trace");
 entry("getmsk");
-
+entry("wait_stat");

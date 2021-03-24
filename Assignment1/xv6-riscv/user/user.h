@@ -1,5 +1,7 @@
+
 struct stat;
 struct rtcdate;
+struct perf;
 
 // system calls
 int fork(void);
@@ -25,6 +27,7 @@ int sleep(int);
 int uptime(void);
 int trace(int,int);
 int getmsk(int);
+int wait_stat(int *status, struct perf* performance);
 
 
 // ulib.c

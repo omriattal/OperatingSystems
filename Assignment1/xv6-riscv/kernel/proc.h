@@ -92,7 +92,7 @@ enum procstate
 	RUNNING,
 	ZOMBIE
 };
-struct pref
+struct perf
 {
 	int ctime;		 // ADDED: creation time
 	int ttime;		 // ADDED: termination time
@@ -114,12 +114,7 @@ struct proc
 	int xstate;			  // Exit status to be returned to parent's wait
 	int pid;			  // Process ID
 	int trace_mask;		  // ADDED: Mask for current traced system calls by this process
-	int ctime;			  // ADDED: creation time
-	int ttime;			  // ADDED: termination time
-	int stime;			  // ADDED: total time process spent in SLEEPING state
-	int retime;			  // ADDED: total time process spent in RUNNABLE state
-	int rutime;			  // ADDED: total time process spent in RUNNING state
-	float bursttime;	  // ADDED: approximate estimated burst time
+	struct perf performance; // ADDED: A struct that holds data for performence tests
 
 	// proc_tree_lock must be held when using this:
 	struct proc *parent; // Parent process
@@ -135,4 +130,4 @@ struct proc
 	char name[16];				 // Process name (debugging)
 };
 
-int update_prefs(uint); // ADDED: the function is in the .c file
+void update_prefs(uint); // ADDED: the function is in the .c file
