@@ -26,6 +26,8 @@ extern char trampoline[]; // trampoline.S
 // must be acquired before any p->lock.
 struct spinlock wait_lock;
 
+void update_perf(uint ticks,struct proc* p);
+
 // Allocate a page for each process's kernel stack.
 // Map it high in memory, followed by an invalid
 // guard page.
@@ -722,12 +724,64 @@ int getmsk(int pid)
 
 int wait_stat(uint64 status, uint64 performance)
 {
-	wait(status);
-	return 7;
-}
+	struct proc *np;
+	int havekids, pid;
+	struct proc *p = myproc();
 
+	acquire(&wait_lock);
+
+	for (;;)
+	{
+		// Scan through table looking for exited children.
+		havekids = 0;
+		for (np = proc; np < &proc[NPROC]; np++)
+		{
+			if (np->parent == p)
+			{
+				// make sure the child isn't still in exit() or swtch().
+				acquire(&np->lock);
+
+				havekids = 1;
+				if (np->state == ZOMBIE)
+				{
+					// Found one.
+					pid = np->pid;
+					update_perf(ticks, np);
+					if (status != 0 && copyout(p->pagetable, status, (char *)&np->xstate,
+											 sizeof(np->xstate)) < 0)
+					{
+						release(&np->lock);
+						release(&wait_lock);
+						return -1;
+					}
+					if(copyout(p->pagetable, performance, (char *)&(np->performance), sizeof(struct perf)) < 0){
+						release(&np->lock);
+						release(&wait_lock);
+						return -1;
+					}
+					freeproc(np);
+					release(&np->lock);
+					release(&wait_lock);
+					return pid;
+				}
+				release(&np->lock);
+			}
+		}
+
+		// No point waiting if we don't have any children.
+		if (!havekids || p->killed)
+		{
+			release(&wait_lock);
+			return -1;
+		}
+
+		// Wait for a child to exit.
+		sleep(p, &wait_lock); //DOC: wait-sleep
+	}
+}
+ 
 // ADDED
-void update_pref(uint tick, struct proc *p)
+void update_perf(uint ticks, struct proc *p)
 {
 	switch (p->state)
 	{
@@ -739,10 +793,10 @@ void update_pref(uint tick, struct proc *p)
 		break;
 	case RUNNABLE:
 		p->performance.retime++;
-		break;
+		break;	 
 	case ZOMBIE:
 		if (p->performance.ttime == -1)
-			p->performance.ttime = tick;
+			p->performance.ttime = ticks;
 		break;
 	default:
 		break;
@@ -750,17 +804,13 @@ void update_pref(uint tick, struct proc *p)
 }
 
 // ADDED
-void update_prefs(uint tick)
+void update_perfs(uint ticks)
 {
 	struct proc *p;
-
 	for (p = proc; p < &proc[NPROC]; p++)
 	{
 		acquire(&p->lock);
-		if (p->state == SLEEPING)
-		{
-			update_pref(tick, p);
-		}
+		update_perf(ticks, p);
 		release(&p->lock);
 	}
 }

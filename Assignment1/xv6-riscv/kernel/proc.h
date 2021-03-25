@@ -130,4 +130,4 @@ struct proc
 	char name[16];				 // Process name (debugging)
 };
 
-void update_prefs(uint); // ADDED: the function is in the .c file
+void update_perfs(uint); // ADDED: the function is in the .c file

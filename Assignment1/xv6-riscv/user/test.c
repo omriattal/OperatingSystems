@@ -5,7 +5,7 @@ struct perf
 {
 	int ctime;		 // ADDED: creation time
 	int ttime;		 // ADDED: termination time
-	int stime;		 // ADDED: total time process spent in SLEEPING state
+	int stime;		 // ADDED: total time press spent in SLEEPING state
 	int retime;		 // ADDED: total time process spent in RUNNABLE state
 	int rutime;		 // ADDED: total time process spent in RUNNING state
 	float bursttime; // ADDED: approximate estimated burst time
@@ -13,9 +13,20 @@ struct perf
 
 int main(void)
 {
-    int a = 5;
-    struct perf performance;
-    int hi = wait_stat(&a, &performance);
-    printf("the number seven is denoted as: %d and does not actually exist!!!\n",hi);
+	int pid;
+	if ((pid = fork()) > 0) {
+		int status;
+		struct perf performance;
+		int cpid = wait_stat(&status, &performance);
+		printf("don't you worry child pid: %d\n", cpid);
+		printf("perf {\n ctime: %d\n ttime: %d\n stime: %d\n retime: %d\n rutime: %d\n}\n",
+				performance.ctime, performance.ttime, performance.stime, performance.retime, performance.rutime);
+	} else {
+		printf("hello is it me you're looking for\n");
+		for (int i = 0 ; i < 10000; i++) {
+			printf(" ");
+		}
+		sleep(10);
+	}
     exit(0);
 }
