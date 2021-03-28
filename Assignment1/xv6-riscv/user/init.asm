@@ -45,6 +45,7 @@ main(void)
   3e:	854a                	mv	a0,s2
   40:	00000097          	auipc	ra,0x0
   44:	6b6080e7          	jalr	1718(ra) # 6f6 <printf>
+    
     pid = fork();
   48:	00000097          	auipc	ra,0x0
   4c:	316080e7          	jalr	790(ra) # 35e <fork>

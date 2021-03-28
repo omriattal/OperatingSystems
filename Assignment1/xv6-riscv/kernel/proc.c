@@ -26,7 +26,7 @@ extern char trampoline[]; // trampoline.S
 // must be acquired before any p->lock.
 struct spinlock wait_lock;
 
-void update_perf(uint ticks,struct proc* p);
+void update_perf(uint ticks, struct proc *p);
 
 // Allocate a page for each process's kernel stack.
 // Map it high in memory, followed by an invalid
@@ -450,6 +450,72 @@ int wait(uint64 addr)
 	}
 }
 
+void sched_default()
+{
+	struct proc *p;
+	struct cpu *c = mycpu();
+	
+	c->proc = 0;
+	for (p = proc; p < &proc[NPROC]; p++)
+	{
+		acquire(&p->lock);
+		if (p->state == RUNNABLE)
+		{
+			// Switch to chosen process.  It is the process's job
+			// to release its lock and then reacquire it
+			// before jumping back to us.
+			p->state = RUNNING;
+			c->proc = p;
+			swtch(&c->context, &p->context);
+
+			// Process is done running for now.
+			// It should have changed its p->state before coming back.
+			c->proc = 0;
+		}
+		release(&p->lock);
+	}
+}
+void sched_fcfs()
+{
+	struct proc dummy;
+	dummy.performance.ctime = 2147483647;
+	struct proc *p;
+	struct proc *first = &dummy;
+	struct cpu *c = mycpu();
+	c->proc = 0;
+	int proc_to_run_index = 0;
+	int i;
+	for (p = proc, i = 0; p < &proc[NPROC]; p++, i++)
+	{
+		acquire(&p->lock);
+		if (p->state == RUNNABLE && p->performance.ctime < first->performance.ctime)
+		{
+			proc_to_run_index = i;
+			first->performance.ctime = p->performance.ctime;
+		}
+		release(&p->lock);
+	}
+	first = &proc[proc_to_run_index];
+	acquire(&first->lock);
+	if (first->state == RUNNABLE)
+	{
+		// Switch to chosen process.  It is the process's job
+		// to release its lock and then reacquire it
+		// before jumping back to us.
+		first->state = RUNNING;
+		c->proc = first;
+		swtch(&c->context, &first->context);
+		if (first->state == RUNNABLE)
+		{
+			first->performance.ctime = ticks;
+		}
+		// Process is done running for now.
+		// It should have changed its first->state before coming back.
+		c->proc = 0;
+	}
+	release(&first->lock);
+}
+
 // Per-CPU process scheduler.
 // Each CPU calls scheduler() after setting itself up.
 // Scheduler never returns.  It loops, doing:
@@ -459,33 +525,16 @@ int wait(uint64 addr)
 //    via swtch back to the scheduler.
 void scheduler(void)
 {
-	struct proc *p;
-	struct cpu *c = mycpu();
-
-	c->proc = 0;
 	for (;;)
 	{
 		// Avoid deadlock by ensuring that devices can interrupt.
 		intr_on();
-
-		for (p = proc; p < &proc[NPROC]; p++)
-		{
-			acquire(&p->lock);
-			if (p->state == RUNNABLE)
-			{
-				// Switch to chosen process.  It is the process's job
-				// to release its lock and then reacquire it
-				// before jumping back to us.
-				p->state = RUNNING;
-				c->proc = p;
-				swtch(&c->context, &p->context);
-
-				// Process is done running for now.
-				// It should have changed its p->state before coming back.
-				c->proc = 0;
-			}
-			release(&p->lock);
-		}
+#ifdef DEFAULT
+		sched_default();
+#endif // ADDED: run defult scheduler
+#ifdef FCFS
+		sched_fcfs();
+#endif
 	}
 }
 
@@ -748,13 +797,14 @@ int wait_stat(uint64 status, uint64 performance)
 					pid = np->pid;
 					update_perf(ticks, np);
 					if (status != 0 && copyout(p->pagetable, status, (char *)&np->xstate,
-											 sizeof(np->xstate)) < 0)
+											   sizeof(np->xstate)) < 0)
 					{
 						release(&np->lock);
 						release(&wait_lock);
 						return -1;
 					}
-					if(copyout(p->pagetable, performance, (char *)&(np->performance), sizeof(struct perf)) < 0){
+					if (copyout(p->pagetable, performance, (char *)&(np->performance), sizeof(struct perf)) < 0)
+					{
 						release(&np->lock);
 						release(&wait_lock);
 						return -1;
@@ -779,7 +829,7 @@ int wait_stat(uint64 status, uint64 performance)
 		sleep(p, &wait_lock); //DOC: wait-sleep
 	}
 }
- 
+
 // ADDED
 void update_perf(uint ticks, struct proc *p)
 {
@@ -793,7 +843,7 @@ void update_perf(uint ticks, struct proc *p)
 		break;
 	case RUNNABLE:
 		p->performance.retime++;
-		break;	 
+		break;
 	case ZOMBIE:
 		if (p->performance.ttime == -1)
 			p->performance.ttime = ticks;
