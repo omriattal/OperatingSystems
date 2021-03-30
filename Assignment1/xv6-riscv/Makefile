@@ -1,6 +1,7 @@
 K=kernel
 U=user
-SCHEDFLAG=FCFS # ADDED #TODO: CHANGE TO DEFAULT
+SCHEDFLAG= DEFAULT # ADDED: flag to indicate which scheduler to run
+
 
 OBJS = \
   $K/entry.o \
@@ -155,7 +156,7 @@ QEMUGDB = $(shell if $(QEMU) -help | grep -q '^-gdb'; \
 	then echo "-gdb tcp::$(GDBPORT)"; \
 	else echo "-s -p $(GDBPORT)"; fi)
 ifndef CPUS
-CPUS := 1 #TODO: CHANGE TO 3
+CPUS := 1 #TODO: CHANGE TO 3 AFTER TESTING
 endif
 
 QEMUOPTS = -machine virt -bios none -kernel $K/kernel -m 128M -smp $(CPUS) -nographic

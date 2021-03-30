@@ -16,12 +16,13 @@ struct proc *initproc;
 struct spinlock TURNLOCK;
 uint TURN = -1;
 
-int get_turn(){
+int get_turn()
+{
 	acquire(&TURNLOCK);
 	TURN++;
 	release(&TURNLOCK);
 	return TURN;
-}// ADDED
+} // ADDED
 
 int nextpid = 1;
 struct spinlock pid_lock;
@@ -142,7 +143,7 @@ found:
 	p->performance.ctime = ticks;
 	p->performance.ttime = -1;
 	p->turn = get_turn();
-	// p->performance.bursttime = QUANTUM + 0.1; // TODO: can't work with float in this OS
+	p->performance.average_bursttime = QUANTUM * 100; // TODO: can't work with float in this OS
 
 	// Allocate a trapframe page.
 	if ((p->trapframe = (struct trapframe *)kalloc()) == 0)
@@ -467,7 +468,6 @@ void sched_default()
 {
 	struct proc *p;
 	struct cpu *c = mycpu();
-	
 	c->proc = 0;
 	for (p = proc; p < &proc[NPROC]; p++)
 	{
@@ -489,6 +489,7 @@ void sched_default()
 	}
 }
 
+// ADDED
 void sched_fcfs()
 {
 	struct proc *p;
@@ -525,6 +526,42 @@ void sched_fcfs()
 	release(&first->lock);
 }
 
+// ADDED
+void sched_srt()
+{
+	struct proc *p;
+	struct cpu *c = mycpu();
+	c->proc = 0;
+	for (p = proc; p < &proc[NPROC]; p++)
+	{
+		acquire(&p->lock);
+		if (p->state == RUNNABLE)
+		{
+			// Switch to chosen process.  It is the process's job
+			// to release its lock and then reacquire it
+			// before jumping back to us.
+			p->state = RUNNING;
+			c->proc = p;
+			uint prev_ticks = ticks;
+			swtch(&c->context, &p->context);
+			uint B = ticks - prev_ticks;
+			uint A = p->performance.average_bursttime;
+			A = ALPHA * B + (100 - ALPHA) * A / 100;
+			p->performance.average_bursttime = A;
+			// Process is done running for now.
+			// It should have changed its p->state before coming back.
+			c->proc = 0;
+		}
+		release(&p->lock);
+	}
+}
+/**
+ * @brief 	uint B = ticks - prev_ticks;
+		uint A = first->performance.average_bursttime;
+		A = ALPHA * B + (100 - ALPHA) * A / 100;
+		first->performance.average_bursttime = A;
+ * 
+ */
 // Per-CPU process scheduler.
 // Each CPU calls scheduler() after setting itself up.
 // Scheduler never returns.  It loops, doing:
@@ -532,6 +569,7 @@ void sched_fcfs()
 //  - swtch to start running that process.
 //  - eventually that process transfers control
 //    via swtch back to the scheduler.
+// ADDED
 void scheduler(void)
 {
 	for (;;)
@@ -543,6 +581,9 @@ void scheduler(void)
 #endif // ADDED: run default scheduler
 #ifdef FCFS
 		sched_fcfs();
+#endif
+#ifdef SRT
+		sched_srt();
 #endif
 	}
 }

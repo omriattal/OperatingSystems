@@ -1,6 +1,6 @@
 #include "kernel/types.h"
 #include "user.h"
-
+#define print printf
 struct perf
 {
 	int ctime;		 // ADDED: creation time
@@ -15,30 +15,28 @@ void print_performance(struct perf* performance) {
 	printf("perf: {\nctime:%d\nttime:%d\nstime:%d\nretime:%d\nruntime:%d\naverage_bursttime:%d}\n",
 	performance->ctime,performance->ttime,performance->stime,performance->retime,performance->rutime,performance->average_bursttime);
 }
+
 int main(void)
 {
 	int pid;
-	int k = 0;
-	if ((pid = fork()) > 0) {
-		int wstatus;
-		struct perf perf;
-		wait_stat(&wstatus, &perf);
-		printf("Finished waiting for child with pid: %d\n", pid);
-		print_performance(&perf);
+	if((pid = fork()) > 0) {
+		struct perf performance;
+		print("I forked and created %d\n",pid);
+		wait_stat(0,&performance);
+		print_performance(&performance);
 	} else {
-		int pid1;
-		if((pid1 = fork()) > 0) {
-			for(int i = 0; i < 100000000; i++) {
-				k++;
-			}
-			printf("Grandchild pid is %d, and k is %d\n", pid1, k);
+		int k = 0;
+		for (int i = 0; i < 1000000000; i++)
+		{
+			k++;
 		}
-		else {
-			for(int i = 0; i < 1000000000; i++) {
-				k++;
-			}
-			printf("i'm the grandchild with k:%d\n",k);
-		}
+		print("k:%d\n",k);
+		print("blah blah bliiii\n");
 	}
-    exit(0);
+
+	// running -> will have perf.runtime 
+	// wait_stat
+	// running
+	// wait_stat
+	exit(0);
 }
