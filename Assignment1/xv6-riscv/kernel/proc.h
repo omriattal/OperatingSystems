@@ -99,7 +99,7 @@ struct perf
 	int stime;		 // ADDED: total time process spent in SLEEPING state
 	int retime;		 // ADDED: total time process spent in RUNNABLE state
 	int rutime;		 // ADDED: total time process spent in RUNNING state
-	float bursttime; // ADDED: approximate estimated burst time
+	int average_bursttime; // ADDED: approximate average burst time
 };
 
 // Per-process state
@@ -115,6 +115,7 @@ struct proc
 	int pid;			  // Process ID
 	int trace_mask;		  // ADDED: Mask for current traced system calls by this process
 	struct perf performance; // ADDED: A struct that holds data for performence tests
+	uint turn;			  // ADDED: the turn in the FCFS scheduler
 
 	// proc_tree_lock must be held when using this:
 	struct proc *parent; // Parent process

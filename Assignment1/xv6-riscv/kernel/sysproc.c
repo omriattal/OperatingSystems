@@ -105,8 +105,7 @@ sys_trace(void)
   int mask, pid;
   argint(0, &mask);
   argint(1, &pid);
-  trace(mask, pid);
-  return 0;
+  return trace(mask, pid);
 }
 
 uint64

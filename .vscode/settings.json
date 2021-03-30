@@ -8,6 +8,10 @@
         "sleeplock.h": "c",
         "types.h": "c",
         "riscv.h": "c",
-        "stat.h": "c"
+        "stat.h": "c",
+        "*.tcc": "cpp",
+        "cmath": "cpp",
+        "type_traits": "cpp",
+        "typeinfo": "cpp"
     }
 }

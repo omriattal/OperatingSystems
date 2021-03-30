@@ -12,6 +12,17 @@ struct proc proc[NPROC];
 
 struct proc *initproc;
 
+// ADDED: global turn variable and function for the FCFS scheduler
+struct spinlock TURNLOCK;
+uint TURN = -1;
+
+int get_turn(){
+	acquire(&TURNLOCK);
+	TURN++;
+	release(&TURNLOCK);
+	return TURN;
+}// ADDED
+
 int nextpid = 1;
 struct spinlock pid_lock;
 
@@ -130,6 +141,8 @@ found:
 	// ADDED: initializing creation and termination time
 	p->performance.ctime = ticks;
 	p->performance.ttime = -1;
+	p->turn = get_turn();
+	// p->performance.bursttime = QUANTUM + 0.1; // TODO: can't work with float in this OS
 
 	// Allocate a trapframe page.
 	if ((p->trapframe = (struct trapframe *)kalloc()) == 0)
@@ -475,23 +488,23 @@ void sched_default()
 		release(&p->lock);
 	}
 }
+
 void sched_fcfs()
 {
-	struct proc dummy;
-	dummy.performance.ctime = 2147483647;
 	struct proc *p;
-	struct proc *first = &dummy;
+	struct proc *first;
 	struct cpu *c = mycpu();
 	c->proc = 0;
+	uint first_turn = 4294967295;
 	int proc_to_run_index = 0;
 	int i;
 	for (p = proc, i = 0; p < &proc[NPROC]; p++, i++)
 	{
 		acquire(&p->lock);
-		if (p->state == RUNNABLE && p->performance.ctime < first->performance.ctime)
+		if (p->state == RUNNABLE && p->turn < first_turn)
 		{
 			proc_to_run_index = i;
-			first->performance.ctime = p->performance.ctime;
+			first_turn = p->turn;
 		}
 		release(&p->lock);
 	}
@@ -505,10 +518,6 @@ void sched_fcfs()
 		first->state = RUNNING;
 		c->proc = first;
 		swtch(&c->context, &first->context);
-		if (first->state == RUNNABLE)
-		{
-			first->performance.ctime = ticks;
-		}
 		// Process is done running for now.
 		// It should have changed its first->state before coming back.
 		c->proc = 0;
@@ -531,7 +540,7 @@ void scheduler(void)
 		intr_on();
 #ifdef DEFAULT
 		sched_default();
-#endif // ADDED: run defult scheduler
+#endif // ADDED: run default scheduler
 #ifdef FCFS
 		sched_fcfs();
 #endif
@@ -639,6 +648,7 @@ void wakeup(void *chan)
 			if (p->state == SLEEPING && p->chan == chan)
 			{
 				p->state = RUNNABLE;
+				p->turn = get_turn(); // ADDED: determin the turn of the process when it wakes up
 			}
 			release(&p->lock);
 		}
