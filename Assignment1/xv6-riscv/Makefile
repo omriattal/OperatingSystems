@@ -1,6 +1,6 @@
 K=kernel
 U=user
-SCHEDFLAG= DEFAULT # ADDED: flag to indicate which scheduler to run
+SCHEDFLAG= DEFAULT # ADDED: SCHEDFLAG: flag to indicate which scheduler to run
 
 
 OBJS = \

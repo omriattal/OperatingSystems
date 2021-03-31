@@ -104,6 +104,7 @@ extern uint64 sys_uptime(void);
 extern uint64 sys_trace(void);	  // ADDED
 extern uint64 sys_getmsk(void);	  // ADDED
 extern uint64 sys_wait_stat(void); // ADDED
+extern uint64 sys_set_priority(void); // ADDED
 
 static uint64 (*syscalls[])(void) = {
 	[SYS_fork] sys_fork,
@@ -129,7 +130,8 @@ static uint64 (*syscalls[])(void) = {
 	[SYS_close] sys_close,
 	[SYS_trace] sys_trace,	 // ADDED
 	[SYS_getmsk] sys_getmsk, // ADDED
-	[SYS_wait_stat] sys_wait_stat}; // ADDED
+	[SYS_wait_stat] sys_wait_stat, // ADDED
+	[SYS_set_priority] sys_set_priority};
 
 // ADDED
 static char *syscallnames[] = {"junk",
@@ -156,7 +158,8 @@ static char *syscallnames[] = {"junk",
 							   "close",
 							   "trace",
 							   "getmsk",
-							   "wait_stat"}; // ADDED
+							   "wait_stat",
+							   "set_priority"}; // ADDED
 
 void syscall(void)
 {

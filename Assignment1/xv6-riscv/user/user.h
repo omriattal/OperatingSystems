@@ -28,6 +28,7 @@ int uptime(void);
 int trace(int,int);
 int getmsk(int);
 int wait_stat(int *status, struct perf* performance);
+int set_priority(int priority);
 
 
 // ulib.c

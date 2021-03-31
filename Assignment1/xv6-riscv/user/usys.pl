@@ -39,3 +39,4 @@ entry("uptime");
 entry("trace");
 entry("getmsk");
 entry("wait_stat");
+entry("set_priority");

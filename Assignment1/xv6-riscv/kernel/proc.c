@@ -15,6 +15,7 @@ struct proc *initproc;
 // ADDED: global turn variable and function for the FCFS scheduler
 struct spinlock TURNLOCK;
 uint TURN = -1;
+int decay_factors[] = {-253,1,3,5,7,25};
 
 int get_turn()
 {
@@ -23,7 +24,6 @@ int get_turn()
 	release(&TURNLOCK);
 	return TURN;
 } // ADDED
-
 int nextpid = 1;
 struct spinlock pid_lock;
 
@@ -143,7 +143,8 @@ found:
 	p->performance.ctime = ticks;
 	p->performance.ttime = -1;
 	p->turn = get_turn();
-	p->performance.average_bursttime = QUANTUM * 100; // TODO: can't work with float in this OS
+	p->performance.average_bursttime = QUANTUM * 100;
+	p->priority = P_NORMAL;
 
 	// Allocate a trapframe page.
 	if ((p->trapframe = (struct trapframe *)kalloc()) == 0)
@@ -338,7 +339,8 @@ int fork(void)
 
 	acquire(&wait_lock);
 	np->parent = p;
-	np->trace_mask = p->trace_mask; // ADDED
+	np->trace_mask = p->trace_mask; // ADDED: copying trace mask in fork
+	np->priority = p->priority; // ADDED: copying priority in fork
 	release(&wait_lock);
 
 	acquire(&np->lock);
@@ -479,8 +481,7 @@ void sched_default()
 			// before jumping back to us.
 			p->state = RUNNING;
 			c->proc = p;
-			swtch(&c->context, &p->context);
-
+			swtch(&c->context,&p->context);
 			// Process is done running for now.
 			// It should have changed its p->state before coming back.
 			c->proc = 0;
@@ -489,7 +490,7 @@ void sched_default()
 	}
 }
 
-// ADDED
+// ADDED: FCFS scheduler
 void sched_fcfs()
 {
 	struct proc *p;
@@ -518,7 +519,7 @@ void sched_fcfs()
 		// before jumping back to us.
 		first->state = RUNNING;
 		c->proc = first;
-		swtch(&c->context, &first->context);
+		swtch(&c->context,&first->context);
 		// Process is done running for now.
 		// It should have changed its first->state before coming back.
 		c->proc = 0;
@@ -526,42 +527,82 @@ void sched_fcfs()
 	release(&first->lock);
 }
 
-// ADDED
+// ADDED: SRT scheduler
 void sched_srt()
 {
 	struct proc *p;
+	struct proc *first;
 	struct cpu *c = mycpu();
 	c->proc = 0;
-	for (p = proc; p < &proc[NPROC]; p++)
+	uint least_average_bursttime = 4294967295;
+	int proc_to_run_index = 0;
+	int i;
+	for (p = proc, i = 0; p < &proc[NPROC]; p++, i++)
 	{
 		acquire(&p->lock);
-		if (p->state == RUNNABLE)
+		if (p->state == RUNNABLE && p->performance.average_bursttime < least_average_bursttime)
 		{
-			// Switch to chosen process.  It is the process's job
-			// to release its lock and then reacquire it
-			// before jumping back to us.
-			p->state = RUNNING;
-			c->proc = p;
-			uint prev_ticks = ticks;
-			swtch(&c->context, &p->context);
-			uint B = ticks - prev_ticks;
-			uint A = p->performance.average_bursttime;
-			A = ALPHA * B + (100 - ALPHA) * A / 100;
-			p->performance.average_bursttime = A;
-			// Process is done running for now.
-			// It should have changed its p->state before coming back.
-			c->proc = 0;
+			proc_to_run_index = i;
+			least_average_bursttime = p->performance.average_bursttime;
 		}
 		release(&p->lock);
 	}
+	first = &proc[proc_to_run_index];
+	acquire(&first->lock);
+	if (first->state == RUNNABLE)
+	{
+		// Switch to chosen process.  It is the process's job
+		// to release its lock and then reacquire it
+		// before jumping back to us.
+		first->state = RUNNING;
+		c->proc = first;
+		swtch(&c->context,&first->context);
+		// Process is done running for now.
+		// It should have changed its first->state before coming back.
+		c->proc = 0;
+	}
+	release(&first->lock);
 }
-/**
- * @brief 	uint B = ticks - prev_ticks;
-		uint A = first->performance.average_bursttime;
-		A = ALPHA * B + (100 - ALPHA) * A / 100;
-		first->performance.average_bursttime = A;
- * 
- */
+
+
+// ADDED: CFSD scheduler
+void sched_cfsd() {
+	struct proc *p;
+	struct proc *first;
+	struct cpu *c = mycpu();
+	c->proc = 0;
+	uint least_runtime_ratio = 4294967295;
+	int proc_to_run_index = 0;
+	int i;
+	uint run_time_ratio;
+	for (p = proc, i = 0; p < &proc[NPROC]; p++, i++)
+	{
+		acquire(&p->lock);
+		run_time_ratio = (p->performance.rutime * decay_factors[p->priority]) / (p->performance.rutime + p->performance.stime);
+		if (p->state == RUNNABLE && run_time_ratio < least_runtime_ratio)
+		{
+			proc_to_run_index = i;
+			least_runtime_ratio = run_time_ratio;   
+		}
+		release(&p->lock);
+	}
+	first = &proc[proc_to_run_index];
+	acquire(&first->lock);
+	if (first->state == RUNNABLE)
+	{
+		// Switch to chosen process.  It is the process's job
+		// to release its lock and then reacquire it
+		// before jumping back to us.
+		first->state = RUNNING;
+		c->proc = first;
+		swtch(&c->context,&first->context);
+		// Process is done running for now.
+		// It should have changed its first->state before coming back.
+		c->proc = 0;
+	}
+	release(&first->lock);
+}
+
 // Per-CPU process scheduler.
 // Each CPU calls scheduler() after setting itself up.
 // Scheduler never returns.  It loops, doing:
@@ -569,7 +610,7 @@ void sched_srt()
 //  - swtch to start running that process.
 //  - eventually that process transfers control
 //    via swtch back to the scheduler.
-// ADDED
+// ADDED: 
 void scheduler(void)
 {
 	for (;;)
@@ -584,6 +625,9 @@ void scheduler(void)
 #endif
 #ifdef SRT
 		sched_srt();
+#endif
+#ifdef CFSD
+		sched_cfsd();
 #endif
 	}
 }
@@ -783,7 +827,7 @@ void procdump(void)
 		printf("\n");
 	}
 }
-//ADDED
+// ADDED: trace
 int trace(int mask, int pid)
 {
 	struct proc *p;
@@ -801,7 +845,7 @@ int trace(int mask, int pid)
 
 	return -1;
 }
-
+// ADDED: getmsk
 int getmsk(int pid)
 {
 	struct proc *p;
@@ -822,6 +866,7 @@ int getmsk(int pid)
 	return -1;
 }
 
+// ADDED: wait_stat
 int wait_stat(uint64 status, uint64 performance)
 {
 	struct proc *np;
@@ -881,21 +926,37 @@ int wait_stat(uint64 status, uint64 performance)
 	}
 }
 
-// ADDED
+void update_avg_burst_zero_burst(struct proc *p){
+	uint B = p->burst;
+	uint A = p->performance.average_bursttime;
+	A = ALPHA * B + (100 - ALPHA) * A / 100;
+	p->performance.average_bursttime = A;
+	printf("process: %d burst: %d\n", p->pid, p->burst);
+	p->burst = 0;
+}
+
+// ADDED: update_perf
 void update_perf(uint ticks, struct proc *p)
 {
 	switch (p->state)
 	{
 	case RUNNING:
+		p->burst++;
 		p->performance.rutime++;
 		break;
 	case SLEEPING:
+		if(p->burst > 0)
+			update_avg_burst_zero_burst(p);
 		p->performance.stime++;
 		break;
 	case RUNNABLE:
+		if(p->burst > 0)
+			update_avg_burst_zero_burst(p);
 		p->performance.retime++;
 		break;
 	case ZOMBIE:
+		if(p->burst > 0)
+			update_avg_burst_zero_burst(p);
 		if (p->performance.ttime == -1)
 			p->performance.ttime = ticks;
 		break;
@@ -904,7 +965,7 @@ void update_perf(uint ticks, struct proc *p)
 	}
 }
 
-// ADDED
+// ADDED: update_perfs
 void update_perfs(uint ticks)
 {
 	struct proc *p;
@@ -914,4 +975,14 @@ void update_perfs(uint ticks)
 		update_perf(ticks, p);
 		release(&p->lock);
 	}
+}
+
+// ADDED: set_priority
+int set_priority(int priority) {
+	struct proc *p = myproc();
+	if (priority >= 1 && priority <= 5) {
+		p->priority = priority;
+		return 0;
+	}
+	return -1;
 }

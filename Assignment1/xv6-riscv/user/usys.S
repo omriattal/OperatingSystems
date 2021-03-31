@@ -120,3 +120,8 @@ wait_stat:
  li a7, SYS_wait_stat
  ecall
  ret
+.global set_priority
+set_priority:
+ li a7, SYS_set_priority
+ ecall
+ ret

@@ -98,7 +98,7 @@ sys_uptime(void)
   return xticks;
 }
 
-//ADDED
+//ADDED: sys_
 uint64
 sys_trace(void)
 {
@@ -125,4 +125,11 @@ sys_wait_stat(void)
   argaddr(1,  &performance);
   return wait_stat(status, performance);
 }
-//ADDED
+
+uint64
+sys_set_priority(void)
+{
+  int priority;
+  argint(0, &priority);
+  return set_priority(priority);
+}

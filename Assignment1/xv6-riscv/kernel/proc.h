@@ -92,13 +92,14 @@ enum procstate
 	RUNNING,
 	ZOMBIE
 };
+
 struct perf
 {
-	int ctime;		 // ADDED: creation time
-	int ttime;		 // ADDED: termination time
-	int stime;		 // ADDED: total time process spent in SLEEPING state
-	int retime;		 // ADDED: total time process spent in RUNNABLE state
-	int rutime;		 // ADDED: total time process spent in RUNNING state
+	int ctime;			   // ADDED: creation time
+	int ttime;			   // ADDED: termination time
+	int stime;			   // ADDED: total time process spent in SLEEPING state
+	int retime;			   // ADDED: total time process spent in RUNNABLE state
+	int rutime;			   // ADDED: total time process spent in RUNNING state
 	int average_bursttime; // ADDED: approximate average burst time
 };
 
@@ -108,15 +109,16 @@ struct proc
 	struct spinlock lock;
 
 	// p->lock must be held when using these:
-	enum procstate state; // Process state
-	void *chan;			  // If non-zero, sleeping on chan
-	int killed;			  // If non-zero, have been killed
-	int xstate;			  // Exit status to be returned to parent's wait
-	int pid;			  // Process ID
-	int trace_mask;		  // ADDED: Mask for current traced system calls by this process
+	enum procstate state;	 // Process state
+	void *chan;				 // If non-zero, sleeping on chan
+	int killed;				 // If non-zero, have been killed
+	int xstate;				 // Exit status to be returned to parent's wait
+	int pid;				 // Process ID
+	int trace_mask;			 // ADDED: Mask for current traced system calls by this process
 	struct perf performance; // ADDED: A struct that holds data for performence tests
-	uint turn;			  // ADDED: the turn in the FCFS scheduler
-
+	uint turn;				 // ADDED: the turn in the FCFS scheduler
+	uint burst;				 // ADDED: current burst length
+	int priority;			 // ADDED: the priority of the process
 	// proc_tree_lock must be held when using this:
 	struct proc *parent; // Parent process
 

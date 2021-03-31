@@ -109,6 +109,7 @@ void            procdump(void);
 int             trace(int mask, int pid);
 int             getmsk(int pid);
 int             wait_stat(uint64 status, uint64 performance);
+int             set_priority(int priority);
 //ADDED
 
 // swtch.S
