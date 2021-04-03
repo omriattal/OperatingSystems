@@ -82,7 +82,6 @@ void usertrap(void)
   // give up the CPU if this is a timer interrupt.
   if (which_dev == 2 && ticks % QUANTUM == 0)
   {
-    printf("process %d yielding\n", myproc()->pid);
     yield();
   }
 #endif // ADDED
@@ -159,7 +158,6 @@ void kerneltrap()
   // give up the CPU if this is a timer interrupt.
   if (which_dev == 2 && myproc() != 0 && myproc()->state == RUNNING && ticks % QUANTUM == 0)
   {
-    printf("process %d yielding\n", myproc()->pid);
     yield();
   }
 #endif // ADDED

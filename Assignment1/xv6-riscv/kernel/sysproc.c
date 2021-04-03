@@ -103,8 +103,10 @@ uint64
 sys_trace(void)
 {
   int mask, pid;
-  argint(0, &mask);
-  argint(1, &pid);
+  if (argint(0, &mask) < 0 || argint(1, &pid) < 0)
+  {
+  }
+  return -1;
   return trace(mask, pid);
 }
 
@@ -112,7 +114,8 @@ uint64
 sys_getmsk(void)
 {
   int pid;
-  argint(0, &pid);
+  if (argint(0, &pid) < 0)
+    return -1;
   return getmsk(pid);
 }
 
@@ -121,8 +124,8 @@ sys_wait_stat(void)
 {
   uint64 status;
   uint64 performance;
-  argaddr(0,  &status);
-  argaddr(1,  &performance);
+  if (argaddr(0, &status) < 0 || argaddr(1, &performance) < 0)
+    return -1;
   return wait_stat(status, performance);
 }
 
@@ -130,6 +133,7 @@ uint64
 sys_set_priority(void)
 {
   int priority;
-  argint(0, &priority);
+  if (argint(0, &priority) < 0)
+    return -1;
   return set_priority(priority);
 }

@@ -24,11 +24,14 @@ int get_turn()
 	release(&TURNLOCK);
 	return TURN;
 } // ADDED
+
+void swtch_and_update_bursttime(struct cpu* c, struct proc *p);
 int nextpid = 1;
 struct spinlock pid_lock;
 
 extern void forkret(void);
 static void freeproc(struct proc *p);
+void update_avg_burst_zero_burst(struct proc *p);
 
 extern char trampoline[]; // trampoline.S
 
@@ -466,6 +469,11 @@ int wait(uint64 addr)
 	}
 }
 
+void swtch_and_update_bursttime(struct cpu *c, struct proc *p) {
+	swtch(&c->context,&p->context);
+		if(&p->burst > 0)
+			update_avg_burst_zero_burst(p);
+}
 void sched_default()
 {
 	struct proc *p;
@@ -519,7 +527,7 @@ void sched_fcfs()
 		// before jumping back to us.
 		first->state = RUNNING;
 		c->proc = first;
-		swtch(&c->context,&first->context);
+		swtch_and_update_bursttime(c,first);
 		// Process is done running for now.
 		// It should have changed its first->state before coming back.
 		c->proc = 0;
@@ -556,7 +564,7 @@ void sched_srt()
 		// before jumping back to us.
 		first->state = RUNNING;
 		c->proc = first;
-		swtch(&c->context,&first->context);
+		swtch_and_update_bursttime(c,first);
 		// Process is done running for now.
 		// It should have changed its first->state before coming back.
 		c->proc = 0;
@@ -578,7 +586,11 @@ void sched_cfsd() {
 	for (p = proc, i = 0; p < &proc[NPROC]; p++, i++)
 	{
 		acquire(&p->lock);
-		run_time_ratio = (p->performance.rutime * decay_factors[p->priority]) / (p->performance.rutime + p->performance.stime);
+		if (p->performance.rutime == 0 && p->performance.stime == 0) {
+			run_time_ratio = 0;
+		} else {
+			run_time_ratio = (p->performance.rutime * decay_factors[p->priority]) / (p->performance.rutime + p->performance.stime);
+		}
 		if (p->state == RUNNABLE && run_time_ratio < least_runtime_ratio)
 		{
 			proc_to_run_index = i;
@@ -592,10 +604,12 @@ void sched_cfsd() {
 	{
 		// Switch to chosen process.  It is the process's job
 		// to release its lock and then reacquire it
-		// before jumping back to us.
 		first->state = RUNNING;
 		c->proc = first;
-		swtch(&c->context,&first->context);
+		swtch_and_update_bursttime(c,first);
+		// swtch(&c->context,&first->context);
+		// if(first->burst > 0)
+		// 	update_avg_burst_zero_burst(first);
 		// Process is done running for now.
 		// It should have changed its first->state before coming back.
 		c->proc = 0;
@@ -931,7 +945,6 @@ void update_avg_burst_zero_burst(struct proc *p){
 	uint A = p->performance.average_bursttime;
 	A = ALPHA * B + (100 - ALPHA) * A / 100;
 	p->performance.average_bursttime = A;
-	printf("process: %d burst: %d\n", p->pid, p->burst);
 	p->burst = 0;
 }
 
@@ -945,18 +958,12 @@ void update_perf(uint ticks, struct proc *p)
 		p->performance.rutime++;
 		break;
 	case SLEEPING:
-		if(p->burst > 0)
-			update_avg_burst_zero_burst(p);
 		p->performance.stime++;
 		break;
 	case RUNNABLE:
-		if(p->burst > 0)
-			update_avg_burst_zero_burst(p);
 		p->performance.retime++;
 		break;
 	case ZOMBIE:
-		if(p->burst > 0)
-			update_avg_burst_zero_burst(p);
 		if (p->performance.ttime == -1)
 			p->performance.ttime = ticks;
 		break;
