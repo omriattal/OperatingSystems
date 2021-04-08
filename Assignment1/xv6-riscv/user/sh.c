@@ -106,7 +106,7 @@ void runcmd(struct cmd *cmd)
             index_from += dir_len + 1;
             from = to + 1;
         }
-        //ADDED fddsfdsfsdfdsf
+        //ADDED
         fprintf(2, "exec %s failed\n", ecmd->argv[0]);
         break;
 
