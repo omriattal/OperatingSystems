@@ -55,6 +55,8 @@ dkms.conf
 *.img
 
 *.asm
+*.sym
+
 .vscode/*
 !.vscode/settings.json
 !.vscode/tasks.json
@@ -66,4 +68,3 @@ dkms.conf
 .history/
 
 _*
-Assignment1/xv6-riscv/.gdbinit.tmpl-riscv

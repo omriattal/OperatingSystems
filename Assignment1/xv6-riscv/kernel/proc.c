@@ -498,6 +498,7 @@ void sched_default()
 	}
 }
 
+// TODO: talk to Omri about an issue where while a process index was picked by the scheduler, the process itself was deleted and then reallocated with a new and wrong turn data
 // ADDED: FCFS scheduler
 void sched_fcfs()
 {
