@@ -146,7 +146,7 @@ found:
 	p->performance.ctime = ticks;
 	p->performance.ttime = -1;
 	p->turn = get_turn();
-	p->performance.average_bursttime = 0; // TODO: change to QUANTUM * 100;
+	p->performance.average_bursttime = QUANTUM * 100;
 	p->priority = P_NORMAL;
 
 	// Allocate a trapframe page.
