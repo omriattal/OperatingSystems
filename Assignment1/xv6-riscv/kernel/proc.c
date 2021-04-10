@@ -15,7 +15,7 @@ struct proc *initproc;
 // ADDED: global turn variable and function for the FCFS scheduler
 struct spinlock TURNLOCK;
 uint TURN = -1;
-int decay_factors[] = {-253,1,3,5,7,25};
+int decay_factors[] = {-253, 1, 3, 5, 7, 25};
 
 int get_turn()
 {
@@ -25,7 +25,7 @@ int get_turn()
 	return TURN;
 } // ADDED
 
-void swtch_and_update_bursttime(struct cpu* c, struct proc *p);
+void swtch_and_update_bursttime(struct cpu *c, struct proc *p);
 int nextpid = 1;
 struct spinlock pid_lock;
 
@@ -146,7 +146,7 @@ found:
 	p->performance.ctime = ticks;
 	p->performance.ttime = -1;
 	p->turn = get_turn();
-	p->performance.average_bursttime = QUANTUM * 100;
+	p->performance.average_bursttime = 0; // TODO: change to QUANTUM * 100;
 	p->priority = P_NORMAL;
 
 	// Allocate a trapframe page.
@@ -343,7 +343,7 @@ int fork(void)
 	acquire(&wait_lock);
 	np->parent = p;
 	np->trace_mask = p->trace_mask; // ADDED: copying trace mask in fork
-	np->priority = p->priority; // ADDED: copying priority in fork
+	np->priority = p->priority;		// ADDED: copying priority in fork
 	release(&wait_lock);
 
 	acquire(&np->lock);
@@ -469,11 +469,13 @@ int wait(uint64 addr)
 	}
 }
 
-void swtch_and_update_bursttime(struct cpu *c, struct proc *p) {
-	swtch(&c->context,&p->context);
-		if(&p->burst > 0)
-			update_avg_burst_zero_burst(p);
+void swtch_and_update_bursttime(struct cpu *c, struct proc *p)
+{
+	swtch(&c->context, &p->context);
+	if (p->burst > 0)
+		update_avg_burst_zero_burst(p);
 }
+
 void sched_default()
 {
 	struct proc *p;
@@ -489,7 +491,7 @@ void sched_default()
 			// before jumping back to us.
 			p->state = RUNNING;
 			c->proc = p;
-			swtch(&c->context,&p->context);
+			swtch_and_update_bursttime(c, p);
 			// Process is done running for now.
 			// It should have changed its p->state before coming back.
 			c->proc = 0;
@@ -498,7 +500,7 @@ void sched_default()
 	}
 }
 
-// TODO: talk to Omri about an issue where while a process index was picked by the scheduler, the process itself was deleted and then reallocated with a new and wrong turn data
+
 // ADDED: FCFS scheduler
 void sched_fcfs()
 {
@@ -521,14 +523,14 @@ void sched_fcfs()
 	}
 	first = &proc[proc_to_run_index];
 	acquire(&first->lock);
-	if (first->state == RUNNABLE)
+	if (first->state == RUNNABLE && first->turn == first_turn)
 	{
 		// Switch to chosen process.  It is the process's job
 		// to release its lock and then reacquire it
 		// before jumping back to us.
 		first->state = RUNNING;
 		c->proc = first;
-		swtch_and_update_bursttime(c,first);
+		swtch_and_update_bursttime(c, first);
 		// Process is done running for now.
 		// It should have changed its first->state before coming back.
 		c->proc = 0;
@@ -565,7 +567,7 @@ void sched_srt()
 		// before jumping back to us.
 		first->state = RUNNING;
 		c->proc = first;
-		swtch_and_update_bursttime(c,first);
+		swtch_and_update_bursttime(c, first);
 		// Process is done running for now.
 		// It should have changed its first->state before coming back.
 		c->proc = 0;
@@ -573,9 +575,9 @@ void sched_srt()
 	release(&first->lock);
 }
 
-
 // ADDED: CFSD scheduler
-void sched_cfsd() {
+void sched_cfsd()
+{
 	struct proc *p;
 	struct proc *first;
 	struct cpu *c = mycpu();
@@ -587,27 +589,30 @@ void sched_cfsd() {
 	for (p = proc, i = 0; p < &proc[NPROC]; p++, i++)
 	{
 		acquire(&p->lock);
-		if (p->performance.rutime == 0 && p->performance.stime == 0) {
+		if (p->performance.rutime == 0 && p->performance.stime == 0)
+		{
 			run_time_ratio = 0;
-		} else {
+		}
+		else
+		{
 			run_time_ratio = (p->performance.rutime * decay_factors[p->priority]) / (p->performance.rutime + p->performance.stime);
 		}
 		if (p->state == RUNNABLE && run_time_ratio < least_runtime_ratio)
 		{
 			proc_to_run_index = i;
-			least_runtime_ratio = run_time_ratio;   
+			least_runtime_ratio = run_time_ratio;
 		}
 		release(&p->lock);
 	}
 	first = &proc[proc_to_run_index];
 	acquire(&first->lock);
-	if (first->state == RUNNABLE)
+	if (first->state == RUNNABLE )
 	{
 		// Switch to chosen process.  It is the process's job
 		// to release its lock and then reacquire it
 		first->state = RUNNING;
 		c->proc = first;
-		swtch_and_update_bursttime(c,first);
+		swtch_and_update_bursttime(c, first);
 		// swtch(&c->context,&first->context);
 		// if(first->burst > 0)
 		// 	update_avg_burst_zero_burst(first);
@@ -625,7 +630,7 @@ void sched_cfsd() {
 //  - swtch to start running that process.
 //  - eventually that process transfers control
 //    via swtch back to the scheduler.
-// ADDED: 
+// ADDED:
 void scheduler(void)
 {
 	for (;;)
@@ -941,7 +946,8 @@ int wait_stat(uint64 status, uint64 performance)
 	}
 }
 
-void update_avg_burst_zero_burst(struct proc *p){
+void update_avg_burst_zero_burst(struct proc *p)
+{
 	uint B = p->burst;
 	uint A = p->performance.average_bursttime;
 	A = ALPHA * B + (100 - ALPHA) * A / 100;
@@ -986,9 +992,11 @@ void update_perfs(uint ticks)
 }
 
 // ADDED: set_priority
-int set_priority(int priority) {
+int set_priority(int priority)
+{
 	struct proc *p = myproc();
-	if (priority >= 1 && priority <= 5) {
+	if (priority >= 1 && priority <= 5)
+	{
 		p->priority = priority;
 		return 0;
 	}
