@@ -904,7 +904,7 @@ void killstatus(char *s)
 		sleep(1);
 		kill(pid1);
 		wait(&xst);
-		if (xst != -1)
+				if (xst != -1)
 		{
 			printf("%s: status should be -1\n", s);
 			exit(1);
