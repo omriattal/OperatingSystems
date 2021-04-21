@@ -36,3 +36,6 @@ entry("getpid");
 entry("sbrk");
 entry("sleep");
 entry("uptime");
+entry("sigprocmask"); # ADDED: sigprocmask syscall
+entry("sigaction");
+entry("sigret");

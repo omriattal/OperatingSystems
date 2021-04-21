@@ -95,3 +95,31 @@ sys_uptime(void)
   release(&tickslock);
   return xticks;
 }
+
+
+// ADDED: sigmaskproc system call
+uint64
+sys_sigprocmask(void) {
+  uint sigmask;
+  if (argint(0, (int *)&sigmask) < 0)
+    return -1;
+  return sigprocmask(sigmask);
+}
+
+// ADDED: sigaction system call
+uint64
+sys_sigaction(void) {
+    int signum;
+    uint64 act;
+    uint64 oldact;
+    if(argint(0, &signum) < 0 || argaddr(0, &act) < 0 || argaddr(0, &oldact) < 0)
+        return -1;
+    return sigaction(signum, (struct sigaction*) act,(struct sigaction*) oldact);
+}
+
+uint64
+sys_sigret(void) {
+    sigret();
+    return 0;
+}
+
