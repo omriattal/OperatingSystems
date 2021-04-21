@@ -100,7 +100,7 @@ extern uint64 sys_unlink(void);
 extern uint64 sys_wait(void);
 extern uint64 sys_write(void);
 extern uint64 sys_uptime(void);
-extern uint64 sys_sigprocmask(void); // ADDED
+extern uint64 sys_sigprocmask(void); // ADDED system calls!
 extern uint64 sys_sigaction(void);
 extern uint64 sys_sigret(void);
 

@@ -134,6 +134,8 @@ found:
         return 0;
     }
 
+    p->signal_handlers[SIGCONT] = SIG_IGN;
+
     // An empty user page table.
     p->pagetable = proc_pagetable(p);
     if (p->pagetable == 0)
@@ -513,7 +515,11 @@ void sched(void)
         panic("sched interruptible");
 
     intena = mycpu()->intena;
-    swtch(&p->context, &mycpu()->context);
+    // ADDED: support for sigstop and sigcont
+    do
+    {
+        swtch(&p->context, &mycpu()->context);
+    } while (myproc()->stopped && !(myproc()->pending_signals & (1 << SIGCONT)));
     mycpu()->intena = intena;
 }
 
@@ -601,16 +607,19 @@ void wakeup(void *chan)
 // Kill the process with the given pid.
 // The victim won't exit until it tries to return
 // to user space (see usertrap() in trap.c).
-int kill(int pid)
+int kill(int pid, int signum)
 {
+    if (signum < 0 || signum >= SIGNAL_SIZE)
+    {
+        return -1;
+    }
     struct proc *p;
-
     for (p = proc; p < &proc[NPROC]; p++)
     {
         acquire(&p->lock);
         if (p->pid == pid)
         {
-            p->killed = 1;
+            p->pending_signals |= 1 << signum;
             if (p->state == SLEEPING)
             {
                 // Wake process from sleep().
@@ -703,31 +712,109 @@ uint sigprocmask(uint sigmask)
     return prev_signalmask;
 }
 
-int sigaction(int signum, struct sigaction *act, struct sigaction *oldact)
+// ADDED: sigaction system call
+int sigaction(int signum, uint64 act, uint64 oldact)
 {
     struct proc *p = myproc();
+    struct sigaction new, old;
     acquire(&p->lock);
-    if (signum < 0 || signum > 31)
-        return -1;
-    if (act != 0 && signum != SIGKILL && signum != SIGSTOP)
+    if (signum < 0 || signum > SIGNAL_SIZE - 1 || signum == SIGKILL || signum == SIGSTOP)
     {
-        if (act->sigmask < 0)
+        release(&p->lock);
+        return -1;
+    }
+    if (oldact != 0)
+    {
+        old.sa_handler = p->signal_handlers[signum];
+        old.sigmask = p->signal_handlers_masks[signum];
+        if (copyout(p->pagetable, oldact, (char *)&old, sizeof(struct sigaction)) < 0)
+        {
+
+            release(&p->lock);
+            return -1;
+        }
+    }
+    if (act != 0)
+    {
+        if (copyin(p->pagetable, (char *)&new, act, sizeof(struct sigaction)) < 0)
         {
             release(&p->lock);
             return -1;
         }
-        p->signal_handlers[signum] = act->sa_handler;
-        p->signal_handlers_masks[signum] = act->sigmask;
-    }
-    if (oldact != 0)
-    {
-        oldact->sa_handler = p->signal_handlers[signum];
-        oldact->sigmask = p->signal_handlers_masks[signum];
+        p->signal_handlers[signum] = new.sa_handler;
+        p->signal_handlers_masks[signum] = new.sigmask;
     }
     release(&p->lock);
     return 0;
 }
 
-void sigret(void) {
+// ADDED: sigret system call
+void sigret(void)
+{
     printf("shtaakk");
+}
+
+// ADDED: kill signal handler
+void kill_handler(int pid)
+{
+    struct proc *p;
+    for (p = proc; p < &proc[NPROC]; p++)
+    {
+        acquire(&p->lock);
+        if (p->pid == pid)
+        {
+            p->killed = 1;
+            if (p->state == SLEEPING)
+            {
+                // Wake process from sleep().
+                p->state = RUNNABLE;
+            }
+            release(&p->lock);
+        }
+        release(&p->lock);
+    }
+}
+
+// ADDED: stop signal handler
+
+void stop_handler(int pid)
+{
+    struct proc *p;
+    for (p = proc; p < &proc[NPROC]; p++)
+    {
+        acquire(&p->lock);
+        if (p->pid == pid)
+        {
+            p->stopped = 1;
+            p->signal_handlers[SIGCONT] = SIG_DFL;
+            if (p->state == SLEEPING)
+            {
+                // Wake process from sleep().
+                p->state = RUNNABLE;
+            }
+            release(&p->lock);
+        }
+        release(&p->lock);
+    }
+}
+
+void cont_handler(int pid)
+{
+    struct proc *p;
+    for (p = proc; p < &proc[NPROC]; p++)
+    {
+        acquire(&p->lock);
+        if (p->pid == pid)
+        {
+            p->stopped = 0;
+            p->signal_handlers[SIGCONT] = SIG_IGN;
+            if (p->state == SLEEPING)
+            {
+                // Wake process from sleep().
+                p->state = RUNNABLE;
+            }
+            release(&p->lock);
+        }
+        release(&p->lock);
+    }
 }

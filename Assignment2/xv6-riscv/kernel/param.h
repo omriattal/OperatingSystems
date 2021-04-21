@@ -18,4 +18,4 @@
 #define SIGKILL 9
 #define SIGSTOP 17
 #define SIGCONT 19
-
+#define SIGNAL_SIZE 32

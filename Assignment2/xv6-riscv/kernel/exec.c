@@ -20,11 +20,11 @@ int exec(char *path, char **argv)
     pagetable_t pagetable = 0, oldpagetable;
     struct proc *p = myproc();
     // ADDED: passing signal handling data to new proces
-    for (int i = 0; i < 32; i++)
+    for (int i = 0; i < SIGNAL_SIZE; i++)
     {
         if (p->signal_handlers[i] != (void *)SIG_IGN)
         {
-            p->signal_handlers[i] = (void *)SIG_DFL;
+            p->signal_handlers[i]  = (void *)SIG_DFL;
         }
         p->signal_handlers_masks[i] = 0;
     }

@@ -73,14 +73,15 @@ sys_sleep(void)
   return 0;
 }
 
+// ADDED: changed kill system call
 uint64
 sys_kill(void)
 {
   int pid;
-
-  if(argint(0, &pid) < 0)
+  int signum;
+  if(argint(0, &pid) < 0 || argint(1, &signum))
     return -1;
-  return kill(pid);
+  return kill(pid, signum);
 }
 
 // return how many clock tick interrupts have occurred
@@ -112,9 +113,9 @@ sys_sigaction(void) {
     int signum;
     uint64 act;
     uint64 oldact;
-    if(argint(0, &signum) < 0 || argaddr(0, &act) < 0 || argaddr(0, &oldact) < 0)
+    if(argint(0, &signum) < 0 || argaddr(1, &act) < 0 || argaddr(2, &oldact) < 0)
         return -1;
-    return sigaction(signum, (struct sigaction*) act,(struct sigaction*) oldact);
+    return sigaction(signum, act, oldact);
 }
 
 uint64

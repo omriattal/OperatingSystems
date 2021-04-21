@@ -8,9 +8,10 @@ struct sigaction {
     void (*sa_handler) (int);
     uint sigmask;
 };
-
+void shit_handler(int a ) {
+    print("shit %d\n", a);
+}
 int main(int argc, char *argv[])
 {
-    sigret();
     exit(0);
 }
