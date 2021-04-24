@@ -91,9 +91,9 @@ usertrapret(void)
 {
   struct proc *p = myproc();
 
-  // check if any signals arrived and deal with them befor returning
-  // to the user space.
-  // handle_signals();
+  // ADDED: check if any signals arrived and deal with them befor returning to the user space.
+  if(!p->handling_signal)
+    handle_kernel_signals();
 
   // we're about to switch the destination of traps from
   // kerneltrap() to usertrap(), so turn off interrupts until

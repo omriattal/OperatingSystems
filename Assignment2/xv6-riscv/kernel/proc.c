@@ -133,9 +133,8 @@ found:
         release(&p->lock);
         return 0;
     }
-
-    p->signal_handlers[SIGCONT] = SIG_IGN;
-
+    // ADDED: ignoring SIGCONT at the start
+    p->signal_handlers[SIGCONT] = (void *)SIG_IGN;
     // An empty user page table.
     p->pagetable = proc_pagetable(p);
     if (p->pagetable == 0)
@@ -150,7 +149,6 @@ found:
     memset(&p->context, 0, sizeof(p->context));
     p->context.ra = (uint64)forkret;
     p->context.sp = p->kstack + PGSIZE;
-
     return p;
 }
 
@@ -283,7 +281,7 @@ int growproc(int n)
 // Sets up child kernel stack to return as if from fork() system call.
 int fork(void)
 {
-    int i, pid;
+    int signal, pid;
     struct proc *np;
     struct proc *p = myproc();
 
@@ -309,9 +307,9 @@ int fork(void)
     np->trapframe->a0 = 0;
 
     // increment reference counts on open file descriptors.
-    for (i = 0; i < NOFILE; i++)
-        if (p->ofile[i])
-            np->ofile[i] = filedup(p->ofile[i]);
+    for (signal = 0; signal < NOFILE; signal++)
+        if (p->ofile[signal])
+            np->ofile[signal] = filedup(p->ofile[signal]);
     np->cwd = idup(p->cwd);
 
     safestrcpy(np->name, p->name, sizeof(p->name));
@@ -323,10 +321,10 @@ int fork(void)
     acquire(&wait_lock);
     np->parent = p;
     np->signal_mask = p->signal_mask;
-    for (int i = 0; i < 32; i++)
+    for (int signal = 0; signal < 32; signal++)
     {
-        np->signal_handlers[i] = p->signal_handlers[i];
-        np->signal_handlers_masks[i] = p->signal_handlers_masks[i];
+        np->signal_handlers[signal] = p->signal_handlers[signal];
+        np->signal_handlers_masks[signal] = p->signal_handlers_masks[signal];
     }
 
     release(&wait_lock);
@@ -515,11 +513,7 @@ void sched(void)
         panic("sched interruptible");
 
     intena = mycpu()->intena;
-    // ADDED: support for sigstop and sigcont
-    do
-    {
-        swtch(&p->context, &mycpu()->context);
-    } while (myproc()->stopped && !(myproc()->pending_signals & (1 << SIGCONT)));
+    swtch(&p->context, &mycpu()->context);
     mycpu()->intena = intena;
 }
 
@@ -620,11 +614,6 @@ int kill(int pid, int signum)
         if (p->pid == pid)
         {
             p->pending_signals |= 1 << signum;
-            if (p->state == SLEEPING)
-            {
-                // Wake process from sleep().
-                p->state = RUNNABLE;
-            }
             release(&p->lock);
             return 0;
         }
@@ -695,14 +684,14 @@ void procdump(void)
     }
 }
 
-// ADDED: sigmaskproc system call
+// ADDED: sigprocmask system call
 uint sigprocmask(uint sigmask)
 {
     struct proc *p = myproc();
     uint prev_signalmask;
     acquire(&p->lock);
     prev_signalmask = p->signal_mask;
-    if (sigmask < 0)
+    if ((sigmask & (1 << SIGKILL)) || (sigmask & (1 << SIGSTOP)))
     {
         release(&p->lock);
         return -1;
@@ -751,70 +740,109 @@ int sigaction(int signum, uint64 act, uint64 oldact)
 // ADDED: sigret system call
 void sigret(void)
 {
-    printf("shtaakk");
+    struct proc *p = myproc();
+    memmove(p->trapframe, p->trapframe_backup, sizeof(struct trapframe));
+    p->signal_mask = p->signal_mask_backup;
+    p->handling_signal = 0;
 }
 
 // ADDED: kill signal handler
-void kill_handler(int pid)
+void kill_handler()
 {
-    struct proc *p;
-    for (p = proc; p < &proc[NPROC]; p++)
+    struct proc *p = myproc();
+    p->killed = 1;
+}
+
+uint should_continue()
+{
+    struct proc *p = myproc();
+    uint retval = 0;
+    acquire(&p->lock);
+    uint pending = p->pending_signals & ~(p->signal_mask);
+    for (int signal = 0; signal < SIGNAL_SIZE; signal++)
     {
-        acquire(&p->lock);
-        if (p->pid == pid)
+        if ((pending & (1 << signal)) && signal != SIGSTOP)
         {
-            p->killed = 1;
-            if (p->state == SLEEPING)
+            if (signal == SIGCONT && p->signal_handlers[SIGCONT] == SIG_DFL)
             {
-                // Wake process from sleep().
-                p->state = RUNNABLE;
+                retval = 1;
+                break;
             }
-            release(&p->lock);
+            else if (p->signal_handlers[signal] == (void *)SIGCONT)
+            {
+                retval = 1;
+                break;
+            }
         }
-        release(&p->lock);
     }
+    release(&p->lock);
+    return retval;
 }
 
 // ADDED: stop signal handler
-
-void stop_handler(int pid)
+void stop_handler()
 {
-    struct proc *p;
-    for (p = proc; p < &proc[NPROC]; p++)
+    struct proc *p = myproc();
+    p->stopped = 1;
+    printf("stopped = %d for process with pid %d\n", p->stopped, p->pid);
+    p->signal_handlers[SIGCONT] = (void *)SIG_DFL;
+    p->handling_signal = 0;
+    release(&p->lock);
+    while (p->stopped && !should_continue())
     {
-        acquire(&p->lock);
-        if (p->pid == pid)
-        {
-            p->stopped = 1;
-            p->signal_handlers[SIGCONT] = SIG_DFL;
-            if (p->state == SLEEPING)
-            {
-                // Wake process from sleep().
-                p->state = RUNNABLE;
-            }
-            release(&p->lock);
-        }
-        release(&p->lock);
+        yield();
     }
+    acquire(&p->lock);
 }
 
-void cont_handler(int pid)
+// ADDED: cont signal handler
+void cont_handler(int signal)
 {
-    struct proc *p;
-    for (p = proc; p < &proc[NPROC]; p++)
+    struct proc *p = myproc();
+    p->stopped = 0;
+    p->signal_handlers[signal] = (void *)SIG_IGN;
+}
+
+// ADDED: handle kernel signals
+void handle_kernel_signals()
+{
+    struct proc *p = myproc();
+    acquire(&p->lock);
+    uint pending = p->pending_signals & ~(p->signal_mask);
+    for (int signal = 0; signal < SIGNAL_SIZE; signal++)
     {
-        acquire(&p->lock);
-        if (p->pid == pid)
+        if (pending & (1 << signal))
         {
-            p->stopped = 0;
-            p->signal_handlers[SIGCONT] = SIG_IGN;
-            if (p->state == SLEEPING)
+            p->handling_signal = 1;
+            p->pending_signals &= ~(1 << signal);
+            void *handler = p->signal_handlers[signal];
+            if ((handler == (void *)SIG_DFL && signal == SIGSTOP) || handler == (void *)SIGSTOP)
             {
-                // Wake process from sleep().
-                p->state = RUNNABLE;
+                printf("dispatching stop handler\n");
+                stop_handler();
             }
-            release(&p->lock);
+            else if ((handler == (void *)SIG_DFL && signal == SIGCONT) || handler == (void *)SIGCONT)
+            {
+                printf("dispatching cont handler\n");
+                cont_handler(signal);
+            }
+            else if ((handler == (void *)SIG_DFL) || (handler == (void *)SIGKILL))
+            {
+                printf("dispatching kill handler\n");
+                kill_handler();
+                release(&p->lock);
+                return;
+            }
+            else if (handler == (void *)SIG_IGN)
+            {
+                printf("ignoring signals\n");
+            }
+            p->handling_signal = 0;
         }
-        release(&p->lock);
     }
+    release(&p->lock);
+}
+
+void handle_user_signals()
+{
 }

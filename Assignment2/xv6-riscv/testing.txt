@@ -1,0 +1,8 @@
+PART 2 
+1. Kernel signal handlers
+- kill a process using SIGKILL and by other signals
+- sig ignore
+- sig stop / sig cont, custom or default
+- blocking signals
+
+
