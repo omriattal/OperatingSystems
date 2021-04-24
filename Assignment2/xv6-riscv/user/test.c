@@ -14,10 +14,9 @@ struct sigaction {
     uint sigmask;
 };
 
-int use(struct sigaction idk);
 int main(int argc, char *argv[])
 {
-    print("who knows wh%p")
+    print("who knows why this works: %p\n", butt_handler);
     struct sigaction act;
     act.sa_handler = (void(*)(int)) shit_handler;
     act.sigmask = 0;
@@ -38,8 +37,4 @@ void butt_handler(int a) {
 
 void shit_handler(int a) {
     printf("shit %d\n", a);
-}
-
-int use(struct sigaction idk){
-    return 7;
 }
