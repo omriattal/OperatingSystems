@@ -19,6 +19,8 @@ extern void forkret(void);
 static void freeproc(struct proc *p);
 
 extern char trampoline[]; // trampoline.S
+extern void* call_start;
+extern void* call_end; 
 
 // helps ensure that wakeups of wait()ing
 // parents are not lost. helps obey the
@@ -133,6 +135,15 @@ found:
         release(&p->lock);
         return 0;
     }
+
+    // Allocate a trapframe_backup page.
+    if ((p->trapframe_backup = (struct trapframe *)kalloc()) == 0)
+    {
+        freeproc(p);
+        release(&p->lock);
+        return 0;
+    }
+
     // ADDED: ignoring SIGCONT at the start
     p->signal_handlers[SIGCONT] = (void *)SIG_IGN;
     // An empty user page table.
@@ -718,7 +729,6 @@ int sigaction(int signum, uint64 act, uint64 oldact)
         old.sigmask = p->signal_handlers_masks[signum];
         if (copyout(p->pagetable, oldact, (char *)&old, sizeof(struct sigaction)) < 0)
         {
-
             release(&p->lock);
             return -1;
         }
@@ -784,7 +794,6 @@ void stop_handler()
 {
     struct proc *p = myproc();
     p->stopped = 1;
-    printf("stopped = %d for process with pid %d\n", p->stopped, p->pid);
     p->signal_handlers[SIGCONT] = (void *)SIG_DFL;
     p->handling_signal = 0;
     release(&p->lock);
@@ -813,21 +822,24 @@ void handle_kernel_signals()
     {
         if (pending & (1 << signal))
         {
+           
             p->handling_signal = 1;
-            p->pending_signals &= ~(1 << signal);
             void *handler = p->signal_handlers[signal];
             if ((handler == (void *)SIG_DFL && signal == SIGSTOP) || handler == (void *)SIGSTOP)
             {
+                p->pending_signals &= ~(1 << signal);
                 printf("dispatching stop handler\n");
                 stop_handler();
             }
             else if ((handler == (void *)SIG_DFL && signal == SIGCONT) || handler == (void *)SIGCONT)
             {
+                p->pending_signals &= ~(1 << signal);
                 printf("dispatching cont handler\n");
                 cont_handler(signal);
             }
             else if ((handler == (void *)SIG_DFL) || (handler == (void *)SIGKILL))
             {
+                p->pending_signals &= ~(1 << signal);
                 printf("dispatching kill handler\n");
                 kill_handler();
                 release(&p->lock);
@@ -835,6 +847,7 @@ void handle_kernel_signals()
             }
             else if (handler == (void *)SIG_IGN)
             {
+                p->pending_signals &= ~(1 << signal);
                 printf("ignoring signals\n");
             }
             p->handling_signal = 0;
@@ -845,4 +858,27 @@ void handle_kernel_signals()
 
 void handle_user_signals()
 {
+    struct proc *p = myproc();
+    uint64 call_size;
+    acquire(&p->lock);
+    uint pending = p->pending_signals & ~(p->signal_mask);
+    for (int signal = 0; signal < SIGNAL_SIZE; signal++)
+    {
+        if (pending & (1 << signal))
+        {
+            p->handling_signal = 1;
+            p->pending_signals &= ~(1 << signal);
+            void *handler = p->signal_handlers[signal];
+            memmove(p->trapframe_backup, p->trapframe, sizeof(struct trapframe));
+            p->signal_mask_backup = p->signal_mask;
+            p->signal_mask = p->signal_handlers_masks[signal];
+            call_size = (uint64) &call_end - (uint64) &call_start;
+            p->trapframe->sp -= call_size;
+            copyout(p->pagetable, (uint64) (p->trapframe->sp), (char *)&call_start, call_size);
+            p->trapframe->a0 = signal;
+            p->trapframe->ra = p->trapframe->sp;
+            p->trapframe->epc = (uint64) handler;
+        }
+    }
+    release(&p->lock);
 }

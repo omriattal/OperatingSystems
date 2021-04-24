@@ -125,3 +125,4 @@ struct proc {
 };
 
 void handle_kernel_signals();
+void handle_user_signals();

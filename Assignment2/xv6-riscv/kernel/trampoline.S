@@ -139,3 +139,12 @@ userret:
         # return to user mode and user pc.
         # usertrapret() set up sstatus and sepc.
         sret
+
+#include "syscall.h"
+
+.globl call_start
+.globl call_end
+call_start:
+ li a7, SYS_sigret
+ ecall
+call_end:
