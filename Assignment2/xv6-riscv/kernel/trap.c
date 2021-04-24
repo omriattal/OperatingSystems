@@ -77,7 +77,7 @@ usertrap(void)
     exit(-1);
 
   // give up the CPU if this is a timer interrupt.
-  while(which_dev == 2)
+  if (which_dev == 2)
     yield();
 
   usertrapret();
@@ -90,6 +90,10 @@ void
 usertrapret(void)
 {
   struct proc *p = myproc();
+
+  // check if any signals arrived and deal with them befor returning
+  // to the user space.
+  // handle_signals();
 
   // we're about to switch the destination of traps from
   // kerneltrap() to usertrap(), so turn off interrupts until
@@ -150,7 +154,7 @@ kerneltrap()
   }
 
   // give up the CPU if this is a timer interrupt.
-  while(which_dev == 2 && myproc() != 0 && myproc()->state == RUNNING)
+  if(which_dev == 2 && myproc() != 0 && myproc()->state == RUNNING)
     yield();
 
   // the yield() may have caused some traps to occur,
