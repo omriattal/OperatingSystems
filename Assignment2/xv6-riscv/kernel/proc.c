@@ -617,7 +617,6 @@ void wakeup(void *chan)
 // to user space (see usertrap() in trap.c).
 int kill(int pid, int signum)
 {
-    printf("process %d sending pid %d signal %d\n", myproc()->pid, pid, signum);
     if (signum < 0 || signum >= SIGNAL_SIZE)
     {
         return -1;

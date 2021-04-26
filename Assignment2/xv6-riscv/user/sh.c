@@ -95,6 +95,9 @@ void runcmd(struct cmd *cmd)
                     signum = atoi(*argptr);
                     kill(pid, signum);
                 }
+                else{
+                    printf("kill: pid %d is missing signal\n", pid);
+                }
             }
         }
         else
