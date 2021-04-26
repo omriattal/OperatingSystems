@@ -140,6 +140,8 @@ userret:
         # usertrapret() set up sstatus and sepc.
         sret
 
+
+# ADDED: calling sigret system call
 #include "syscall.h"
 
 .globl call_start

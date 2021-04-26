@@ -13,14 +13,16 @@ struct proc proc[NPROC];
 struct proc *initproc;
 
 int nextpid = 1;
+int nexttid = 1;
 struct spinlock pid_lock;
+struct spinlock tid_lock;
 
 extern void forkret(void);
 static void freeproc(struct proc *p);
-
+static void freethread(struct thread *); // ADDED: freethread
 extern char trampoline[]; // trampoline.S
-extern void* call_start;
-extern void* call_end; 
+extern void *call_start;
+extern void *call_end;
 
 // helps ensure that wakeups of wait()ing
 // parents are not lost. helps obey the
@@ -37,15 +39,19 @@ void proc_mapstacks(pagetable_t kpgtbl)
 
     for (p = proc; p < &proc[NPROC]; p++)
     {
-        char *pa = kalloc();
-        if (pa == 0)
-            panic("kalloc");
-        uint64 va = KSTACK((int)(p - proc));
-        kvmmap(kpgtbl, va, (uint64)pa, PGSIZE, PTE_R | PTE_W);
+        for (int t = 0; t < NTHREADS; t++)
+        {
+            char *pa = kalloc();
+            if (pa == 0)
+                panic("kalloc");
+            uint64 va = KSTACK((int)(p - proc), t);
+            kvmmap(kpgtbl, va, (uint64)pa, PGSIZE, PTE_R | PTE_W);
+        }
     }
 }
 
 // initialize the proc table at boot time.
+// ADDED: changed procinit to initiate the threads kstacks
 void procinit(void)
 {
     struct proc *p;
@@ -55,7 +61,11 @@ void procinit(void)
     for (p = proc; p < &proc[NPROC]; p++)
     {
         initlock(&p->lock, "proc");
-        p->kstack = KSTACK((int)(p - proc));
+        for (int t = 0; t < NTHREADS; t++)
+        {
+            initlock(&p->threads[t].lock, "thread");
+            p->threads[t].kstack = KSTACK((int)(p - proc), t);
+        }
     }
 }
 
@@ -89,6 +99,7 @@ myproc(void)
     return p;
 }
 
+
 int allocpid()
 {
     int pid;
@@ -101,10 +112,23 @@ int allocpid()
     return pid;
 }
 
+// ADDED: allocating thread id
+int alloctid()
+{
+    int tid;
+    acquire(&tid_lock);
+    tid = nexttid;
+    nexttid = nexttid + 1;
+    release(&tid_lock);
+    return tid;
+}
+
+
 // Look in the process table for an UNUSED proc.
 // If found, initialize state required to run in the kernel,
 // and return with p->lock held.
 // If there are no free procs, or a memory allocation fails, return 0.
+// ADDED: overhauled the allocproc function with threads.
 static struct proc *
 allocproc(void)
 {
@@ -128,14 +152,6 @@ found:
     p->pid = allocpid();
     p->state = USED;
 
-    // Allocate a trapframe page.
-    if ((p->trapframe = (struct trapframe *)kalloc()) == 0)
-    {
-        freeproc(p);
-        release(&p->lock);
-        return 0;
-    }
-
     // Allocate a trapframe_backup page.
     if ((p->trapframe_backup = (struct trapframe *)kalloc()) == 0)
     {
@@ -143,9 +159,27 @@ found:
         release(&p->lock);
         return 0;
     }
+    struct thread *t = p->threads[MAIN_THREAD_INDEX];
+    // Allocate a trapframe page.
+    if ((t->trapframe = (struct trapframe *)kalloc()) == 0)
+    {
+        freeproc(p);
+        release(&p->lock);
+        return 0;
+    }
+
+    t->tid = alloctid();
+    t->state = USED;
+
+    // Set up new context to start executing at forkret,
+    // which returns to user space.
+    memset(&t->context, 0, sizeof(t->context));
+    t->context.ra = (uint64)forkret;
+    t->context.sp = t->kstack + PGSIZE;
 
     // ADDED: ignoring SIGCONT at the start
     p->signal_handlers[SIGCONT] = (void *)SIG_IGN;
+
     // An empty user page table.
     p->pagetable = proc_pagetable(p);
     if (p->pagetable == 0)
@@ -154,14 +188,56 @@ found:
         release(&p->lock);
         return 0;
     }
+    return p;
+}
+
+// ADDED: allocing threads
+static struct thread *
+allocthread(struct proc *p){
+    int t_idx;
+    struct thread *t;
+    for (t_idx = 0; t_idx < NTHREADS; t_idx++)
+    {
+        t = &p->threads[t_idx];
+        acquire(&t->lock);
+        if (t->state == UNUSED)
+        {
+            goto found;
+        }
+        else
+        {
+            release(&t->lock);
+        }
+    }
+    return 0;
+
+found:
+    t->tid = alloctid();
+    t->state = USED;
+    t->trapframe = &(p->threads[MAIN_THREAD_INDEX].trapframe[t_idx]);
 
     // Set up new context to start executing at forkret,
     // which returns to user space.
-    memset(&p->context, 0, sizeof(p->context));
-    p->context.ra = (uint64)forkret;
-    p->context.sp = p->kstack + PGSIZE;
-    return p;
+    memset(&t->context, 0, sizeof(t->context));
+    t->context.ra = (uint64)forkret;
+    t->context.sp = t->kstack + PGSIZE;
+
+    return t;
 }
+
+static void
+freethread(struct thread *t) {
+     if (t->trapframe)
+        kfree((void *)t->trapframe);
+    t->trapframe = 0;
+    t->tid = 0;
+    t->parent = 0;
+    t->chan = 0;
+    t->killed = 0;
+    t->xstate = 0;
+    t->state = UNUSED;
+}
+
 
 // free a proc structure and the data hanging from it,
 // including user pages.
@@ -169,9 +245,10 @@ found:
 static void
 freeproc(struct proc *p)
 {
-    if (p->trapframe)
-        kfree((void *)p->trapframe);
-    p->trapframe = 0;
+    // ADDED: freeing trapframe backup
+    if (p->trapframe_backup)
+        kfree((void *)p->trapframe_backup);
+    p->trapframe_backup = 0;
     if (p->pagetable)
         proc_freepagetable(p->pagetable, p->sz);
     p->pagetable = 0;
@@ -179,9 +256,6 @@ freeproc(struct proc *p)
     p->pid = 0;
     p->parent = 0;
     p->name[0] = 0;
-    p->chan = 0;
-    p->killed = 0;
-    p->xstate = 0;
     p->state = UNUSED;
 }
 
@@ -207,10 +281,9 @@ proc_pagetable(struct proc *p)
         uvmfree(pagetable, 0);
         return 0;
     }
-
     // map the trapframe just below TRAMPOLINE, for trampoline.S.
-    if (mappages(pagetable, TRAPFRAME, PGSIZE,
-                 (uint64)(p->trapframe), PTE_R | PTE_W) < 0)
+    if (mappages(pagetable, TRAPFRAME(MAIN_THREAD_INDEX), PGSIZE,
+                 (uint64)(p->threads[MAIN_THREAD_INDEX].trapframe), PTE_R | PTE_W) < 0)
     {
         uvmunmap(pagetable, TRAMPOLINE, 1, 0);
         uvmfree(pagetable, 0);
@@ -225,7 +298,7 @@ proc_pagetable(struct proc *p)
 void proc_freepagetable(pagetable_t pagetable, uint64 sz)
 {
     uvmunmap(pagetable, TRAMPOLINE, 1, 0);
-    uvmunmap(pagetable, TRAPFRAME, 1, 0);
+    uvmunmap(pagetable, TRAPFRAME(0), 1, 0);
     uvmfree(pagetable, sz);
 }
 
@@ -740,6 +813,11 @@ int sigaction(int signum, uint64 act, uint64 oldact)
             release(&p->lock);
             return -1;
         }
+        if ((new.sigmask & 1 << SIGKILL) || (new.sigmask & 1 << SIGSTOP))
+        {
+            release(&p->lock);
+            return -1;
+        }
         p->signal_handlers[signum] = new.sa_handler;
         p->signal_handlers_masks[signum] = new.sigmask;
     }
@@ -751,9 +829,11 @@ int sigaction(int signum, uint64 act, uint64 oldact)
 void sigret(void)
 {
     struct proc *p = myproc();
+    acquire(&p->lock);
     memmove(p->trapframe, p->trapframe_backup, sizeof(struct trapframe));
     p->signal_mask = p->signal_mask_backup;
     p->handling_signal = 0;
+    release(&p->lock);
 }
 
 // ADDED: kill signal handler
@@ -795,7 +875,6 @@ void stop_handler()
     struct proc *p = myproc();
     p->stopped = 1;
     p->signal_handlers[SIGCONT] = (void *)SIG_DFL;
-    p->handling_signal = 0;
     release(&p->lock);
     while (p->stopped && !should_continue())
     {
@@ -822,8 +901,7 @@ void handle_kernel_signals()
     {
         if (pending & (1 << signal))
         {
-           
-            p->handling_signal = 1;
+
             void *handler = p->signal_handlers[signal];
             if ((handler == (void *)SIG_DFL && signal == SIGSTOP) || handler == (void *)SIGSTOP)
             {
@@ -850,12 +928,12 @@ void handle_kernel_signals()
                 p->pending_signals &= ~(1 << signal);
                 printf("ignoring signals\n");
             }
-            p->handling_signal = 0;
         }
     }
     release(&p->lock);
 }
 
+// ADDED: handle user signals
 void handle_user_signals()
 {
     struct proc *p = myproc();
@@ -872,12 +950,13 @@ void handle_user_signals()
             memmove(p->trapframe_backup, p->trapframe, sizeof(struct trapframe));
             p->signal_mask_backup = p->signal_mask;
             p->signal_mask = p->signal_handlers_masks[signal];
-            call_size = (uint64) &call_end - (uint64) &call_start;
+            call_size = (uint64)&call_end - (uint64)&call_start;
             p->trapframe->sp -= call_size;
-            copyout(p->pagetable, (uint64) (p->trapframe->sp), (char *)&call_start, call_size);
+            copyout(p->pagetable, (uint64)(p->trapframe->sp), (char *)&call_start, call_size);
             p->trapframe->a0 = signal;
             p->trapframe->ra = p->trapframe->sp;
-            p->trapframe->epc = (uint64) handler;
+            p->trapframe->epc = (uint64)handler;
+            break;
         }
     }
     release(&p->lock);

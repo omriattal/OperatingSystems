@@ -44,6 +44,3 @@ void free(void*);
 int atoi(const char*);
 int memcmp(const void *, const void *, uint);
 void *memcpy(void *, const void *, uint);
-
-void butt_handler(int a );
-void shit_handler(int a );
