@@ -1,3 +1,5 @@
+#define NTHREADS 8 // ADDED: maximum number of threads in process
+#define MAIN_THREAD_INDEX 0 //ADDED: the index of the main thread in the threads array.
 // Saved registers for kernel context switches.
 struct context
 {
@@ -22,7 +24,8 @@ struct context
 // Per-CPU state.
 struct cpu
 {
-    struct proc *proc;      // The process running on this cpu, or null.
+    struct thread *thread;  // ADDED: The thread running on this cpu, or null.
+    struct proc *proc;      // The process of the thread running on this cpu, or null.
     struct context context; // swtch() here to enter scheduler().
     int noff;               // Depth of push_off() nesting.
     int intena;             // Were interrupts enabled before push_off()?
@@ -87,12 +90,19 @@ enum procstate
 {
     UNUSED,
     USED,
+    ZOMBIE
+};
+
+// ADDED: threadstate
+enum threadstate
+{
+    UNUSED,
+    USED,
     SLEEPING,
     RUNNABLE,
     RUNNING,
     ZOMBIE
 };
-#define N_THREADS 8 // ADDED: maximum number of threads in process
 
 struct sigaction
 {
@@ -104,14 +114,9 @@ struct sigaction
 struct proc
 {
     struct spinlock lock;
-
-    // p->lock must be held when using these:
-    enum procstate state; // Process state
-    void *chan;           // If non-zero, sleeping on chan
-    int killed;           // If non-zero, have been killed
-    int xstate;           // Exit status to be returned to parent's wait
-    int pid;              // Process ID
-
+   
+    int pid;   
+              // Process ID
     //ADDED: signal stuff
     uint pending_signals;
     uint signal_mask;
@@ -121,54 +126,52 @@ struct proc
     uint signal_mask_backup;
     uint handling_signal;
     int stopped; // ADDED: If non-zero, was stopped
-
-    // proc_tree_lock must be held when using this:
-    struct proc *parent; // Parent process
-
-    // these are private to the process, so p->lock need not be held.
-    uint64 kstack;               // Virtual address of kernel stack
+    
+    struct thread threads[NTHREADS];
+    enum procstate state;
     uint64 sz;                   // Size of process memory (bytes)
     pagetable_t pagetable;       // User page table
-    struct trapframe *trapframe; // data page for trampoline.S
-    struct context context;      // swtch() here to run process
     struct file *ofile[NOFILE];  // Open files
     struct inode *cwd;           // Current directory
     char name[16];               // Process name (debugging)
+    struct proc *parent; // Parent process
+    
+    // uint64 kstack;               // Virtual address of kernel stack
+    // struct trapframe *trapframe; // data page for trampoline.S
+    // struct context context;      // swtch() here to run process
 };
 
+// ADDED: thread struct
 struct thread
 {
     struct spinlock lock;
 
-    // p->lock must be held when using these:
-    enum procstate state; // Process state
-    void *chan;           // If non-zero, sleeping on chan
+    int tid;
+    enum  threadstate state; // Process state
     int killed;           // If non-zero, have been killed
     int xstate;           // Exit status to be returned to parent's wait
-    int pid;              // Process ID
-
-    // ADDED: signal stuff
-    uint pending_signals;
-    uint signal_mask;
-    uint signal_handlers_masks[SIGNAL_SIZE];
-    void *signal_handlers[SIGNAL_SIZE];
-    struct trapframe *trapframe_backup;
-    uint signal_mask_backup;
-    uint handling_signal;
-    int stopped; // ADDED: If non-zero, was stopped
-
-    // proc_tree_lock must be held when using this:
+    void *chan;           // If non-zero, sleeping on chan
     struct proc *parent; // Parent process
-
-    // these are private to the process, so p->lock need not be held.
     uint64 kstack;               // Virtual address of kernel stack
-    uint64 sz;                   // Size of process memory (bytes
-    pagetable_t pagetable;       // User page table
     struct trapframe *trapframe; // data page for trampoline.S
     struct context context;      // swtch() here to run process
-    struct file *ofile[NOFILE];  // Open files
-    struct inode *cwd;           // Current directory
-    char name[16];               // Process name (debugging)
+    int killed;
+
+    // uint pending_signals;
+    // uint signal_mask;
+    // uint signal_handlers_masks[SIGNAL_SIZE];
+    // void *signal_handlers[SIGNAL_SIZE];
+    // struct trapframe *trapframe_backup;
+    // uint signal_mask_backup;
+    // uint handling_signal;
+    // int stopped;
+
+
+    // uint64 sz;                   // Size of process memory (bytes)
+    // pagetable_t pagetable;       // User page table
+    // struct file *ofile[NOFILE];  // Open files
+    // struct inode *cwd;           // Current directory
+    // char name[16];               // Process name (debugging)
 };
 
 // ADDED, function signatures
