@@ -92,21 +92,18 @@ void usertrapret(void)
 {
     struct proc *p = myproc();
 
-    // ADDED: check if any kernel signals arrived and deal with them befor returning to the user space.
+    // ADDED: check if any signals arrived and deal with them befor returning to the user space.
     if (!p->handling_signal)
+    {
         handle_kernel_signals();
+        handle_user_signals();
+    }
 
     // we're about to switch the destination of traps from
     // kerneltrap() to usertrap(), so turn off interrupts until
     // we're back in user space, where usertrap() is correct.
     intr_off();
 
-    // ADDED: check if any user signals arrived and deal with them befor returning to the user space.
-    p->handling_signal = 0;
-    if (!p->handling_signal)
-    {
-        handle_user_signals();
-    }
     // send syscalls, interrupts, and exceptions to trampoline.S
     w_stvec(TRAMPOLINE + (uservec - trampoline));
 
