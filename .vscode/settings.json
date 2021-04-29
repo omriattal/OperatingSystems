@@ -13,6 +13,7 @@
         "cmath": "cpp",
         "type_traits": "cpp",
         "typeinfo": "cpp",
-        "param.h": "c"
+        "param.h": "c",
+        "spinlock.h": "c"
     }
 }

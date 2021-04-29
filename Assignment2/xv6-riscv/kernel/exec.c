@@ -9,6 +9,7 @@
 
 static int loadseg(pde_t *pgdir, uint64 addr, struct inode *ip, uint offset, uint sz);
 
+// ADDED: support klt in exec
 int exec(char *path, char **argv)
 {
     char *s, *last;
@@ -19,6 +20,19 @@ int exec(char *path, char **argv)
     struct proghdr ph;
     pagetable_t pagetable = 0, oldpagetable;
     struct proc *p = myproc();
+    struct thread *t = mythread();
+    for(struct thread *t_iter = p->threads; t_iter < &p->threads[NTHREADS]; t_iter++){
+        if(t_iter->tid == t->tid) continue;
+        acquire(&t_iter->lock);
+        t_iter->killed = 1;
+        if(t_iter->state == TSLEEPING)
+            t_iter->state = TRUNNABLE;
+        release(&t_iter->lock);
+        kthread_join(t_iter->tid, 0);
+        // printf("got to exec, join thread %d \n", t->tid);
+    }
+    p->main_thread = t;
+
     // ADDED: passing signal handling data to new proces
     for (int i = 0; i < SIGNAL_SIZE; i++)
     {
@@ -111,7 +125,7 @@ int exec(char *path, char **argv)
     // arguments to user main(argc, argv)
     // argc is returned via the system call return
     // value, which goes in a0.
-    p->trapframe->a1 = sp;
+    t->trapframe->a1 = sp;
 
     // Save program name for debugging.
     for (last = s = path; *s; s++)
@@ -123,8 +137,8 @@ int exec(char *path, char **argv)
     oldpagetable = p->pagetable;
     p->pagetable = pagetable;
     p->sz = sz;
-    p->trapframe->epc = elf.entry; // initial program counter = main
-    p->trapframe->sp = sp;         // initial stack pointer
+    t->trapframe->epc = elf.entry; // initial program counter = main
+    t->trapframe->sp = sp;         // initial stack pointer
     proc_freepagetable(oldpagetable, oldsz);
 
     return argc; // this ends up in a0, the first argument to main(argc, argv)

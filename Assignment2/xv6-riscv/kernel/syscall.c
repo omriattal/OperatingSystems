@@ -29,24 +29,25 @@ int fetchstr(uint64 addr, char *buf, int max)
     return strlen(buf);
 }
 
+// ADDED: mythread instead of myproc
 static uint64
 argraw(int n)
 {
-    struct proc *p = myproc();
+    struct thread *t = mythread();
     switch (n)
     {
     case 0:
-        return p->trapframe->a0;
+        return t->trapframe->a0;
     case 1:
-        return p->trapframe->a1;
+        return t->trapframe->a1;
     case 2:
-        return p->trapframe->a2;
+        return t->trapframe->a2;
     case 3:
-        return p->trapframe->a3;
+        return t->trapframe->a3;
     case 4:
-        return p->trapframe->a4;
+        return t->trapframe->a4;
     case 5:
-        return p->trapframe->a5;
+        return t->trapframe->a5;
     }
     panic("argraw");
     return -1;
@@ -134,20 +135,21 @@ static uint64 (*syscalls[])(void) = {
     [SYS_sigret] sys_sigret
     };
 
+// ADDED: changed syscall procedure to thread's trapf
 void syscall(void)
 {
     int num;
+    struct thread *t = mythread();
     struct proc *p = myproc();
-
-    num = p->trapframe->a7;
+    num = t->trapframe->a7;
     if (num > 0 && num < NELEM(syscalls) && syscalls[num])
     {
-        p->trapframe->a0 = syscalls[num]();
+        t->trapframe->a0 = syscalls[num]();
     }
     else
     {
-        printf("%d %s: unknown sys call %d\n",
-               p->pid, p->name, num);
-        p->trapframe->a0 = -1;
+        printf("pid:%d tid: %d %s: unknown sys call %d\n",
+               p->pid, t->tid, p->name, num);
+        t->trapframe->a0 = -1;
     }
 }

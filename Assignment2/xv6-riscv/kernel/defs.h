@@ -94,6 +94,14 @@ int kill(int, int);
 struct cpu *mycpu(void);
 struct cpu *getmycpu(void);
 struct proc *myproc();
+struct thread *mythread(); // ADDED: mythread
+void kthread_exit(int status); //ADDED: kthread exit system call
+int kthread_join(int thread_id, int *status); //ADDED: kthread exit system call
+
+
+
+
+
 void procinit(void);
 void scheduler(void) __attribute__((noreturn));
 void sched(void);

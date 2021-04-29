@@ -20,7 +20,7 @@ struct spinlock tid_lock;
 extern void forkret(void);
 static void freeproc(struct proc *p);
 static void freethread(struct thread *); // ADDED: freethread
-extern char trampoline[]; // trampoline.S
+extern char trampoline[];                // trampoline.S
 extern void *call_start;
 extern void *call_end;
 
@@ -36,17 +36,13 @@ struct spinlock wait_lock;
 void proc_mapstacks(pagetable_t kpgtbl)
 {
     struct proc *p;
-
     for (p = proc; p < &proc[NPROC]; p++)
     {
-        for (int t = 0; t < NTHREADS; t++)
-        {
-            char *pa = kalloc();
-            if (pa == 0)
-                panic("kalloc");
-            uint64 va = KSTACK((int)(p - proc), t);
-            kvmmap(kpgtbl, va, (uint64)pa, PGSIZE, PTE_R | PTE_W);
-        }
+        char *pa = kalloc();
+        if (pa == 0)
+            panic("kalloc");
+        uint64 va = KSTACK((int)(p - proc));
+        kvmmap(kpgtbl, va, (uint64)pa, PGSIZE, PTE_R | PTE_W);
     }
 }
 
@@ -64,7 +60,6 @@ void procinit(void)
         for (int t = 0; t < NTHREADS; t++)
         {
             initlock(&p->threads[t].lock, "thread");
-            p->threads[t].kstack = KSTACK((int)(p - proc), t);
         }
     }
 }
@@ -99,6 +94,16 @@ myproc(void)
     return p;
 }
 
+// ADDED: mythread
+struct thread *
+mythread(void)
+{
+    push_off();
+    struct cpu *c = mycpu();
+    struct thread *t = c->thread;
+    pop_off();
+    return t;
+}
 
 int allocpid()
 {
@@ -123,7 +128,6 @@ int alloctid()
     return tid;
 }
 
-
 // Look in the process table for an UNUSED proc.
 // If found, initialize state required to run in the kernel,
 // and return with p->lock held.
@@ -137,7 +141,7 @@ allocproc(void)
     for (p = proc; p < &proc[NPROC]; p++)
     {
         acquire(&p->lock);
-        if (p->state == UNUSED)
+        if (p->state == PUNUSED)
         {
             goto found;
         }
@@ -150,17 +154,12 @@ allocproc(void)
 
 found:
     p->pid = allocpid();
-    p->state = USED;
+    p->state = PUSED;
 
-    // Allocate a trapframe_backup page.
-    if ((p->trapframe_backup = (struct trapframe *)kalloc()) == 0)
-    {
-        freeproc(p);
-        release(&p->lock);
-        return 0;
-    }
-    struct thread *t = p->threads[MAIN_THREAD_INDEX];
-    // Allocate a trapframe page.
+    // Create the main thread
+    struct thread *t = &p->threads[MAIN_THREAD_INDEX];
+
+    // Allocate a trapframe page that will hold all the threads trap frames an the backup trapframe.
     if ((t->trapframe = (struct trapframe *)kalloc()) == 0)
     {
         freeproc(p);
@@ -168,16 +167,31 @@ found:
         return 0;
     }
 
+    t->cid = MAIN_THREAD_INDEX;
     t->tid = alloctid();
-    t->state = USED;
+    t->state = TUSED;
+
+    // Allocate a trapframe_backup page.
+    p->trapframe_backup = t->trapframe + NTHREADS;
 
     // Set up new context to start executing at forkret,
     // which returns to user space.
     memset(&t->context, 0, sizeof(t->context));
     t->context.ra = (uint64)forkret;
+    if ((t->kstack = (uint64)kalloc()) == 0)
+    {
+        freeproc(p);
+        release(&p->lock);
+        return 0;
+    }
     t->context.sp = t->kstack + PGSIZE;
 
-    // ADDED: ignoring SIGCONT at the start
+    t->parent = p;
+
+    // Set main thread field for comfort purposes
+    p->main_thread = t;
+
+    //ignoring sigcont signal at the start
     p->signal_handlers[SIGCONT] = (void *)SIG_IGN;
 
     // An empty user page table.
@@ -191,53 +205,107 @@ found:
     return p;
 }
 
-// ADDED: allocing threads
-static struct thread *
-allocthread(struct proc *p){
-    int t_idx;
-    struct thread *t;
-    for (t_idx = 0; t_idx < NTHREADS; t_idx++)
+// // ADDED: allocing threads
+// static struct thread *
+// allocthread(struct proc *p)
+// {
+//     int t_idx;
+//     struct thread *t;
+//     for (t_idx = 0; t_idx < NTHREADS; t_idx++)
+//     {
+//         t = &p->threads[t_idx];
+//         acquire(&t->lock);
+//         if (t->state == TUNUSED)
+//         {
+//             goto found;
+//         }
+//         else
+//         {
+//             release(&t->lock);
+//         }
+//     }
+//     return 0;
+
+// found:
+//     t->cid = t_idx;
+//     t->tid = alloctid();
+//     t->state = TUSED;
+//     t->trapframe = &(p->main_thread->trapframe[t_idx]);
+//     t->parent = p;
+
+//     // Set up new context to start executing at forkret,
+//     // which returns to user space.
+//     memset(&t->context, 0, sizeof(t->context));
+//     t->context.ra = (uint64)forkret;
+//     if((t->kstack = (uint64) kalloc()) == 0){
+//         freethread(t);
+//         release(&t->lock);
+//         return 0;
+//     }
+//     t->context.sp = t->kstack + PGSIZE;
+
+//     return t;
+// }
+
+// ADDED: finding replacement as a mainthread
+struct thread *find_replacement(struct proc *p)
+{
+    for (struct thread *t = p->threads; t < &proc->threads[NTHREADS]; t++)
     {
-        t = &p->threads[t_idx];
-        acquire(&t->lock);
-        if (t->state == UNUSED)
+        if (t != p->main_thread)
         {
-            goto found;
-        }
-        else
-        {
+            acquire(&t->lock);
+            if (t->state != TUNUSED)
+            {
+                release(&t->lock);
+                return t;
+            }
             release(&t->lock);
         }
     }
     return 0;
-
-found:
-    t->tid = alloctid();
-    t->state = USED;
-    t->trapframe = &(p->threads[MAIN_THREAD_INDEX].trapframe[t_idx]);
-
-    // Set up new context to start executing at forkret,
-    // which returns to user space.
-    memset(&t->context, 0, sizeof(t->context));
-    t->context.ra = (uint64)forkret;
-    t->context.sp = t->kstack + PGSIZE;
-
-    return t;
 }
 
+// todo: implement this function.
+// ADDED: new system call!
+void kthread_exit(int status)
+{
+    struct thread *t = mythread();
+    struct proc *p = myproc();
+    acquire(&p->lock);
+    acquire(&t->lock);
+    if (t == p->main_thread && (p->main_thread = find_replacement(p)) == 0)
+    {
+        p->main_thread = p->threads;
+        p->state = PZOMBIE;
+        release(&p->lock);
+        release(&t->lock);
+        exit(-1);
+    }
+
+    t->xstate = status;
+    t->state = TZOMBIE;
+    release(&p->lock);
+    wakeup(t);
+    
+    sched();
+    panic("! at the disco");
+}
+
+// ADDED: a new function that frees the thread sent as an argument
 static void
-freethread(struct thread *t) {
-     if (t->trapframe)
-        kfree((void *)t->trapframe);
+freethread(struct thread *t)
+{
+    if (t->kstack)
+        kfree((void *)t->kstack);
+    t->kstack = 0;
     t->trapframe = 0;
     t->tid = 0;
     t->parent = 0;
     t->chan = 0;
     t->killed = 0;
-    t->xstate = 0;
-    t->state = UNUSED;
+    t->state = TUNUSED;
 }
-
 
 // free a proc structure and the data hanging from it,
 // including user pages.
@@ -245,18 +313,25 @@ freethread(struct thread *t) {
 static void
 freeproc(struct proc *p)
 {
-    // ADDED: freeing trapframe backup
-    if (p->trapframe_backup)
-        kfree((void *)p->trapframe_backup);
-    p->trapframe_backup = 0;
+    // ADDED: freeing trapframe page
+    if (p->main_thread->trapframe)
+        kfree(p->main_thread->trapframe);
+
+    // Free all threads to stay on the safe side.
+    for (struct thread *t = p->threads; t < &p->threads[NTHREADS]; t++)
+        freethread(t);
+
     if (p->pagetable)
         proc_freepagetable(p->pagetable, p->sz);
+
+    p->trapframe_backup = 0;
     p->pagetable = 0;
     p->sz = 0;
     p->pid = 0;
     p->parent = 0;
     p->name[0] = 0;
-    p->state = UNUSED;
+    p->xstate = 0;
+    p->state = PUNUSED;
 }
 
 // Create a user page table for a given process,
@@ -283,7 +358,7 @@ proc_pagetable(struct proc *p)
     }
     // map the trapframe just below TRAMPOLINE, for trampoline.S.
     if (mappages(pagetable, TRAPFRAME(MAIN_THREAD_INDEX), PGSIZE,
-                 (uint64)(p->threads[MAIN_THREAD_INDEX].trapframe), PTE_R | PTE_W) < 0)
+                 (uint64)(p->main_thread->trapframe), PTE_R | PTE_W) < 0)
     {
         uvmunmap(pagetable, TRAMPOLINE, 1, 0);
         uvmfree(pagetable, 0);
@@ -295,10 +370,11 @@ proc_pagetable(struct proc *p)
 
 // Free a process's page table, and free the
 // physical memory it refers to.
+//ADDED: support modifying the TRAPFRAME macro
 void proc_freepagetable(pagetable_t pagetable, uint64 sz)
 {
     uvmunmap(pagetable, TRAMPOLINE, 1, 0);
-    uvmunmap(pagetable, TRAPFRAME(0), 1, 0);
+    uvmunmap(pagetable, TRAPFRAME(MAIN_THREAD_INDEX), 1, 0);
     uvmfree(pagetable, sz);
 }
 
@@ -316,6 +392,7 @@ uchar initcode[] = {
 // Set up first user process.
 void userinit(void)
 {
+
     struct proc *p;
 
     p = allocproc();
@@ -327,14 +404,13 @@ void userinit(void)
     p->sz = PGSIZE;
 
     // prepare for the very first "return" from kernel to user.
-    p->trapframe->epc = 0;     // user program counter
-    p->trapframe->sp = PGSIZE; // user stack pointer
+    p->main_thread->trapframe->epc = 0;     // user program counter
+    p->main_thread->trapframe->sp = PGSIZE; // user stack pointer
 
     safestrcpy(p->name, "initcode", sizeof(p->name));
     p->cwd = namei("/");
 
-    p->state = RUNNABLE;
-
+    p->main_thread->state = TRUNNABLE;
     release(&p->lock);
 }
 
@@ -363,13 +439,16 @@ int growproc(int n)
 
 // Create a new process, copying the parent.
 // Sets up child kernel stack to return as if from fork() system call.
+
+// ADDED: overhauled the fork syscall to support thread
 int fork(void)
 {
     int signal, pid;
     struct proc *np;
-    struct proc *p = myproc();
+    struct thread *t = mythread();
+    struct proc *p = t->parent;
 
-    // Allocate process.
+    // Allocate process (and its main thread)
     if ((np = allocproc()) == 0)
     {
         return -1;
@@ -385,10 +464,10 @@ int fork(void)
     np->sz = p->sz;
 
     // copy saved user registers.
-    *(np->trapframe) = *(p->trapframe);
+    *(np->main_thread->trapframe) = *(t->trapframe);
 
     // Cause fork to return 0 in the child.
-    np->trapframe->a0 = 0;
+    np->main_thread->trapframe->a0 = 0;
 
     // increment reference counts on open file descriptors.
     for (signal = 0; signal < NOFILE; signal++)
@@ -405,7 +484,7 @@ int fork(void)
     acquire(&wait_lock);
     np->parent = p;
     np->signal_mask = p->signal_mask;
-    for (int signal = 0; signal < 32; signal++)
+    for (int signal = 0; signal < SIGNAL_SIZE; signal++)
     {
         np->signal_handlers[signal] = p->signal_handlers[signal];
         np->signal_handlers_masks[signal] = p->signal_handlers_masks[signal];
@@ -413,9 +492,9 @@ int fork(void)
 
     release(&wait_lock);
 
-    acquire(&np->lock);
-    np->state = RUNNABLE;
-    release(&np->lock);
+    acquire(&np->main_thread->lock);
+    np->main_thread->state = TRUNNABLE;
+    release(&np->main_thread->lock);
 
     return pid;
 }
@@ -439,9 +518,12 @@ void reparent(struct proc *p)
 // Exit the current process.  Does not return.
 // An exited process remains in the zombie state
 // until its parent calls wait().
+
+// ADDED: overhauled the exit syscall to kill all other threads of the same process
 void exit(int status)
 {
     struct proc *p = myproc();
+    struct thread *t = mythread();
 
     if (p == initproc)
         panic("init exiting");
@@ -462,6 +544,18 @@ void exit(int status)
     end_op();
     p->cwd = 0;
 
+    for (struct thread *t_iter = p->threads; t_iter < &p->threads[NTHREADS]; t_iter++)
+    {
+        if(t_iter->tid == mythread()->tid) continue;
+        
+        acquire(&t_iter->lock);
+        t_iter->killed = 1;
+        if (t_iter->state == TSLEEPING)
+            t_iter->state = TRUNNABLE;
+        release(&t_iter->lock);
+        kthread_join(t_iter->tid, 0);
+    }
+
     acquire(&wait_lock);
 
     // Give any children to init.
@@ -471,15 +565,17 @@ void exit(int status)
     wakeup(p->parent);
 
     acquire(&p->lock);
-
     p->xstate = status;
-    p->state = ZOMBIE;
-
+    p->state = PZOMBIE;
+    release(&p->lock);
+    acquire(&t->lock);
+    t->xstate = status;
+    t->state = TZOMBIE;
     release(&wait_lock);
-
+    
     // Jump into the scheduler, never to return.
-    sched();
-    panic("zombie exit");
+	sched();
+	panic("zombie exit");
 }
 
 // Wait for a child process to exit and return its pid.
@@ -504,7 +600,7 @@ int wait(uint64 addr)
                 acquire(&np->lock);
 
                 havekids = 1;
-                if (np->state == ZOMBIE)
+                if (np->state == PZOMBIE)
                 {
                     // Found one.
                     pid = np->pid;
@@ -535,6 +631,47 @@ int wait(uint64 addr)
         sleep(p, &wait_lock); //DOC: wait-sleep
     }
 }
+//TODO: complete implementation of this function
+// ADDED: kthread join.
+int kthread_join(int thread_id, int *status)
+{
+    struct thread *t = mythread();
+    struct proc *p = myproc();
+    struct thread *target = 0;
+    if (thread_id <= 0)
+    {
+        return -1;
+    }
+    for (struct thread *t_iter = p->threads; t_iter < &p->threads[NTHREADS]; t_iter++)
+    {
+        if (t_iter == t)
+            continue;
+        acquire(&t_iter->lock);
+        if (t_iter->tid == thread_id)
+        {
+            target = t_iter;
+            break;
+        }
+        release(&t_iter->lock);
+    }
+    if (target == 0)
+        return -1;
+    while (target->tid == thread_id && (target->state == TZOMBIE || target->state == TUNUSED))
+    {
+        sleep(target, &target->lock);
+    }
+    if (target->tid == thread_id && target->state == TZOMBIE)
+    {
+        if (status != 0 && copyout(p->pagetable, (uint64)status, (char *)&target->xstate, sizeof(int)) < 0)
+        {
+            release(&target->lock);
+            return -1;
+        }
+        freethread(target);
+    }
+    release(&target->lock);
+    return 0;
+}
 
 // Per-CPU process scheduler.
 // Each CPU calls scheduler() after setting itself up.
@@ -543,34 +680,56 @@ int wait(uint64 addr)
 //  - swtch to start running that process.
 //  - eventually that process transfers control
 //    via swtch back to the scheduler.
+
+// ADDED: changed the scheduler run over threads and not processes
 void scheduler(void)
 {
     struct proc *p;
+    struct thread *t;
     struct cpu *c = mycpu();
-
-    c->proc = 0;
+    c->thread = 0;
     for (;;)
     {
         // Avoid deadlock by ensuring that devices can interrupt.
         intr_on();
-
         for (p = proc; p < &proc[NPROC]; p++)
         {
             acquire(&p->lock);
-            if (p->state == RUNNABLE)
+            if (p->state == PUNUSED)
             {
-                // Switch to chosen process.  It is the process's job
-                // to release its lock and then reacquire it
-                // before jumping back to us.
-                p->state = RUNNING;
-                c->proc = p;
-                swtch(&c->context, &p->context);
-
-                // Process is done running for now.
-                // It should have changed its p->state before coming back.
-                c->proc = 0;
+                release(&p->lock);
+                continue;
             }
             release(&p->lock);
+            // TODO: check if we could lock the process here instead of down there.
+
+            for (t = p->threads; t < &p->threads[NTHREADS]; t++)
+            {
+                acquire(&t->lock);
+                if (t->state == TRUNNABLE)
+                {
+                    // Switch to chosen thread.  It is the threads's job
+                    // to release its lock and then reacquire it
+                    // before jumping back to us.
+                    t->state = TRUNNING;
+                    c->thread = t;
+                    c->proc = p;
+                    int i;
+                    for (i = 0; i < 3; i++)
+                    {
+                        if (c == &cpus[i])
+                            break;
+                    }
+
+                    swtch(&c->context, &t->context);
+
+                    // Process is done running for now.
+                    // It should have changed its p->state before coming back.
+                    c->thread = 0;
+                    c->proc = 0;
+                }
+                release(&t->lock);
+            }
         }
     }
 }
@@ -582,33 +741,36 @@ void scheduler(void)
 // be proc->intena and proc->noff, but that would
 // break in the few places where a lock is held but
 // there's no process.
+// ADDED: changed to dealin with thread instead of process
 void sched(void)
 {
     int intena;
-    struct proc *p = myproc();
-
-    if (!holding(&p->lock))
-        panic("sched p->lock");
+    struct thread *t = mythread();
+    if (!holding(&t->lock))
+    {
+        panic("sched t->lock");
+    }
     if (mycpu()->noff != 1)
         panic("sched locks");
-    if (p->state == RUNNING)
+    if (t->state == TRUNNING)
         panic("sched running");
     if (intr_get())
         panic("sched interruptible");
 
     intena = mycpu()->intena;
-    swtch(&p->context, &mycpu()->context);
+    swtch(&t->context, &mycpu()->context);
     mycpu()->intena = intena;
 }
 
 // Give up the CPU for one scheduling round.
+//ADDED: changed yield with mythread
 void yield(void)
 {
-    struct proc *p = myproc();
-    acquire(&p->lock);
-    p->state = RUNNABLE;
+    struct thread *t = mythread();
+    acquire(&t->lock);
+    t->state = TRUNNABLE;
     sched();
-    release(&p->lock);
+    release(&t->lock);
 }
 
 // A fork child's very first scheduling by scheduler()
@@ -618,7 +780,8 @@ void forkret(void)
     static int first = 1;
 
     // Still holding p->lock from scheduler.
-    release(&myproc()->lock);
+    // ADDED: mythread instead of myproc
+    release(&mythread()->lock);
 
     if (first)
     {
@@ -634,9 +797,10 @@ void forkret(void)
 
 // Atomically release lock and sleep on chan.
 // Reacquires lock when awakened.
+//ADDED: changed to support threads.
 void sleep(void *chan, struct spinlock *lk)
 {
-    struct proc *p = myproc();
+    struct thread *t = mythread();
 
     // Must acquire p->lock in order to
     // change p->state and then call sched.
@@ -645,46 +809,53 @@ void sleep(void *chan, struct spinlock *lk)
     // (wakeup locks p->lock),
     // so it's okay to release lk.
 
-    acquire(&p->lock); //DOC: sleeplock1
+    acquire(&t->lock); //DOC: sleeplock1
     release(lk);
-
     // Go to sleep.
-    p->chan = chan;
-    p->state = SLEEPING;
+    t->chan = chan;
+    t->state = TSLEEPING;
 
     sched();
 
     // Tidy up.
-    p->chan = 0;
+    t->chan = 0;
 
     // Reacquire original lock.
-    release(&p->lock);
+    release(&t->lock);
     acquire(lk);
 }
 
 // Wake up all processes sleeping on chan.
 // Must be called without any p->lock.
+//ADDED: waking up all threads.
 void wakeup(void *chan)
 {
     struct proc *p;
+    struct thread *t;
 
     for (p = proc; p < &proc[NPROC]; p++)
     {
-        if (p != myproc())
+        acquire(&p->lock);
+        for (t = p->threads; t < &p->threads[NTHREADS]; t++)
         {
-            acquire(&p->lock);
-            if (p->state == SLEEPING && p->chan == chan)
+            if (t != mythread())
             {
-                p->state = RUNNABLE;
+                acquire(&t->lock);
+                if (t->state == TSLEEPING && t->chan == chan)
+                {
+                    t->state = TRUNNABLE;
+                }
+                release(&t->lock);
             }
-            release(&p->lock);
         }
+        release(&p->lock);
     }
 }
 
 // Kill the process with the given pid.
 // The victim won't exit until it tries to return
 // to user space (see usertrap() in trap.c).
+// ADDED: changed the kill system call to be like linux!
 int kill(int pid, int signum)
 {
     if (signum < 0 || signum >= SIGNAL_SIZE)
@@ -743,21 +914,20 @@ int either_copyin(void *dst, int user_src, uint64 src, uint64 len)
 // Print a process listing to console.  For debugging.
 // Runs when user types ^P on console.
 // No lock to avoid wedging a stuck machine further.
+// TODO: consider giving an f about this.
 void procdump(void)
 {
     static char *states[] = {
-        [UNUSED] "unused",
-        [SLEEPING] "sleep ",
-        [RUNNABLE] "runble",
-        [RUNNING] "run   ",
-        [ZOMBIE] "zombie"};
+        [PUNUSED] "unused",
+        [PUSED] "sleep ",
+        [PZOMBIE] "zombie"};
     struct proc *p;
     char *state;
 
     printf("\n");
     for (p = proc; p < &proc[NPROC]; p++)
     {
-        if (p->state == UNUSED)
+        if (p->state == PUNUSED)
             continue;
         if (p->state >= 0 && p->state < NELEM(states) && states[p->state])
             state = states[p->state];
@@ -829,10 +999,13 @@ int sigaction(int signum, uint64 act, uint64 oldact)
 void sigret(void)
 {
     struct proc *p = myproc();
+    struct thread *t = mythread();
     acquire(&p->lock);
-    memmove(p->trapframe, p->trapframe_backup, sizeof(struct trapframe));
+    acquire(&t->lock);
+    memmove(t->trapframe, p->trapframe_backup, sizeof(struct trapframe));
     p->signal_mask = p->signal_mask_backup;
     p->handling_signal = 0;
+    release(&t->lock);
     release(&p->lock);
 }
 
@@ -937,8 +1110,10 @@ void handle_kernel_signals()
 void handle_user_signals()
 {
     struct proc *p = myproc();
+    struct thread *t = mythread();
     uint64 call_size;
     acquire(&p->lock);
+    acquire(&t->lock);
     uint pending = p->pending_signals & ~(p->signal_mask);
     for (int signal = 0; signal < SIGNAL_SIZE; signal++)
     {
@@ -947,17 +1122,18 @@ void handle_user_signals()
             p->handling_signal = 1;
             p->pending_signals &= ~(1 << signal);
             void *handler = p->signal_handlers[signal];
-            memmove(p->trapframe_backup, p->trapframe, sizeof(struct trapframe));
+            memmove(p->trapframe_backup, t->trapframe, sizeof(struct trapframe));
             p->signal_mask_backup = p->signal_mask;
             p->signal_mask = p->signal_handlers_masks[signal];
             call_size = (uint64)&call_end - (uint64)&call_start;
-            p->trapframe->sp -= call_size;
-            copyout(p->pagetable, (uint64)(p->trapframe->sp), (char *)&call_start, call_size);
-            p->trapframe->a0 = signal;
-            p->trapframe->ra = p->trapframe->sp;
-            p->trapframe->epc = (uint64)handler;
+            t->trapframe->sp -= call_size;
+            copyout(p->pagetable, (uint64)(t->trapframe->sp), (char *)&call_start, call_size);
+            t->trapframe->a0 = signal;
+            t->trapframe->ra = t->trapframe->sp;
+            t->trapframe->epc = (uint64)handler;
             break;
         }
     }
+    release(&t->lock);
     release(&p->lock);
 }

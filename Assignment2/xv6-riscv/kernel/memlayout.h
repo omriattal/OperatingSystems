@@ -1,4 +1,5 @@
-#include "proc.h"
+struct trapframe;
+
 // Physical memory layout
 
 // qemu -machine virt is set up like this,
@@ -54,8 +55,7 @@
 
 // map kernel stacks beneath the trampoline,
 // each surrounded by invalid guard pages.
-// ADDED: now returns the virtual address of the kernel stack
-#define KSTACK(p, t) (TRAMPOLINE - (((p * NTHREADS) + t) + 1)* 2*PGSIZE)
+#define KSTACK(p) (TRAMPOLINE - ((p)+1)* 2*PGSIZE)
 
 // User memory layout.
 // Address zero first:
@@ -67,4 +67,4 @@
 //   TRAPFRAME (p->trapframe, used by the trampoline)
 //   TRAMPOLINE (the same page as in the kernel)
 // ADDED: changed the TRAPFRAME macro to depend on the thread index
-#define TRAPFRAME(t) (TRAMPOLINE - (t + 1) * sizeof(struct trapframe))
+#define TRAPFRAME(t) (TRAMPOLINE - PGSIZE + (t * sizeof(struct trapframe)))
