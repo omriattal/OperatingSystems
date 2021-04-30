@@ -95,8 +95,6 @@ struct cpu *mycpu(void);
 struct cpu *getmycpu(void);
 struct proc *myproc();
 struct thread *mythread(); // ADDED: mythread
-void kthread_exit(int status); //ADDED: kthread exit system call
-int kthread_join(int thread_id, int *status); //ADDED: kthread exit system call
 
 
 
@@ -117,6 +115,11 @@ void procdump(void);
 uint sigprocmask(uint sigmask);                       // ADDED: sigmaskproc system call
 int sigaction(int signum, uint64 act, uint64 oldact); // ADDED: sigaction system call
 void sigret(void);                                    //ADDED: void system call
+int kthread_create(uint64 start_func, uint64 stack); // ADDED: kthread create system call
+int kthread_id(); // ADDED: kthread id syste, call
+void kthread_exit(int status); //ADDED: kthread exit system call
+int kthread_join(int thread_id, uint64 status); //ADDED: kthread exit system call
+
 // swtch.S
 void swtch(struct context *, struct context *);
 

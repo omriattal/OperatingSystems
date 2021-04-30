@@ -156,6 +156,7 @@ struct proc
     uint signal_handlers_masks[SIGNAL_SIZE];
     void *signal_handlers[SIGNAL_SIZE];
     struct trapframe *trapframe_backup;
+    struct trapframe *trapframes;
     uint signal_mask_backup;
     uint handling_signal;
     int stopped; // ADDED: If non-zero, was stopped

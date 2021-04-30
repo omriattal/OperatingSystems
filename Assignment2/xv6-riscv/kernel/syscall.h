@@ -20,8 +20,13 @@
 #define SYS_link   19
 #define SYS_mkdir  20
 #define SYS_close  21
-#define SYS_sigprocmask 22 // ADDED: sigmaskproc system call
-#define SYS_sigaction 23 // ADDED: sigaction system call
+#define SYS_sigprocmask 22 // ADDED: system calls!
+#define SYS_sigaction 23 
 #define SYS_sigret 24
+#define SYS_kthread_create 25
+#define SYS_kthread_id 26
+#define SYS_kthread_exit 27
+#define SYS_kthread_join 28
+
 
 

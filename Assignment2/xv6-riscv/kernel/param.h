@@ -13,9 +13,10 @@
 #define MAXPATH      128   // maximum file path name
 
 //ADDED
-#define SIG_DFL 0
+#define SIG_DFL 3
 #define SIG_IGN 1
 #define SIGKILL 9
 #define SIGSTOP 17
 #define SIGCONT 19
 #define SIGNAL_SIZE 32
+#define STACK_SIZE 4000

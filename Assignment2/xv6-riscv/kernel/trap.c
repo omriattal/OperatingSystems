@@ -75,7 +75,7 @@ void usertrap(void)
     }
     else
     {
-        printf("usertrap(): unexpected scause %p pid=%d tid=%d\n", r_scause(), p->pid, t->tid);
+        printf("usertrap(): unexpected scause %p pid=%d tid=%d cid=%d\n", r_scause(), p->pid, t->tid, t->cid);
         printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
         p->killed = 1;
     }
@@ -132,7 +132,6 @@ void usertrapret(void)
     x &= ~SSTATUS_SPP; // clear SPP to 0 for user mode
     x |= SSTATUS_SPIE; // enable interrupts in user mode
     w_sstatus(x);
-
     // set S Exception Program Counter to the saved user pc.
     w_sepc(t->trapframe->epc);
 
@@ -143,7 +142,17 @@ void usertrapret(void)
     // switches to the user page table, restores user registers,
     // and switches to user mode with sret.
     uint64 fn = TRAMPOLINE + (userret - trampoline);
-    ((void (*)(uint64, uint64))fn)(TRAPFRAME(t->cid), satp); // ADDED: using the TRAPFRAME macro in a new way.
+
+    if (t->tid == 4)
+    {
+        int a = 0;
+        a++;
+        ((void (*)(uint64, uint64))fn)(TRAPFRAME(t->cid), satp); // ADDED: using the TRAPFRAME macro in a new way.
+    }
+    else {
+        ((void (*)(uint64, uint64))fn)(TRAPFRAME(t->cid), satp); // ADDED: using the TRAPFRAME macro in a new way.
+    }
+    
 }
 
 // interrupts and exceptions from kernel code go here via kernelvec,

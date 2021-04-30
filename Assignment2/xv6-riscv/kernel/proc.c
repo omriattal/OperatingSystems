@@ -160,12 +160,13 @@ found:
     struct thread *t = &p->threads[MAIN_THREAD_INDEX];
 
     // Allocate a trapframe page that will hold all the threads trap frames an the backup trapframe.
-    if ((t->trapframe = (struct trapframe *)kalloc()) == 0)
+    if ((p->trapframes = (struct trapframe *)kalloc()) == 0)
     {
         freeproc(p);
         release(&p->lock);
         return 0;
     }
+    t->trapframe = p->trapframes;
 
     t->cid = MAIN_THREAD_INDEX;
     t->tid = alloctid();
@@ -184,12 +185,16 @@ found:
         release(&p->lock);
         return 0;
     }
-    t->context.sp = t->kstack + PGSIZE;
+    t->context.sp = t->kstack + PGSIZE; 
 
     t->parent = p;
 
     // Set main thread field for comfort purposes
     p->main_thread = t;
+
+    for(int i = 0; i < SIGNAL_SIZE; i++){
+        p->signal_handlers[i] = (void *)SIG_DFL;
+    }
 
     //ignoring sigcont signal at the start
     p->signal_handlers[SIGCONT] = (void *)SIG_IGN;
@@ -205,47 +210,63 @@ found:
     return p;
 }
 
-// // ADDED: allocing threads
-// static struct thread *
-// allocthread(struct proc *p)
-// {
-//     int t_idx;
-//     struct thread *t;
-//     for (t_idx = 0; t_idx < NTHREADS; t_idx++)
-//     {
-//         t = &p->threads[t_idx];
-//         acquire(&t->lock);
-//         if (t->state == TUNUSED)
-//         {
-//             goto found;
-//         }
-//         else
-//         {
-//             release(&t->lock);
-//         }
-//     }
-//     return 0;
+// ADDED: allocing threads
+static struct thread *
+allocthread(struct proc *p)
+{
+    int t_idx;
+    struct thread *t;
+    for (t_idx = 0; t_idx < NTHREADS; t_idx++)
+    {
+        t = &p->threads[t_idx];
+        if (t == mythread()) continue;
+        acquire(&t->lock);
+        if (t->state == TUNUSED)
+        {
+            goto found;
+        }
+        else
+        {
+            release(&t->lock);
+        }
+    }
+    return 0;
 
-// found:
-//     t->cid = t_idx;
-//     t->tid = alloctid();
-//     t->state = TUSED;
-//     t->trapframe = &(p->main_thread->trapframe[t_idx]);
-//     t->parent = p;
+found:
+    t->cid = t_idx;
+    t->tid = alloctid();
+    t->state = TUSED;
+    t->trapframe = p->trapframes + t_idx;
+    t->parent = p;
 
-//     // Set up new context to start executing at forkret,
-//     // which returns to user space.
-//     memset(&t->context, 0, sizeof(t->context));
-//     t->context.ra = (uint64)forkret;
-//     if((t->kstack = (uint64) kalloc()) == 0){
-//         freethread(t);
-//         release(&t->lock);
-//         return 0;
-//     }
-//     t->context.sp = t->kstack + PGSIZE;
+    // Set up new context to start executing at forkret,
+    // which returns to user space.
+    memset(&t->context, 0, sizeof(t->context));
+    t->context.ra = (uint64)forkret;
+    if((t->kstack = (uint64) kalloc()) == 0){
+        freethread(t);
+        release(&t->lock);
+        return 0;
+    }
+    t->context.sp = t->kstack + PGSIZE;
+    return t;
+}
 
-//     return t;
-// }
+// ADDED: kthread create
+int kthread_create(uint64 start_func, uint64 stack) {
+    struct proc *p = myproc();
+    struct thread *nt;
+    if((nt = allocthread(p)) == 0){
+        return -1;
+    }
+    *nt->trapframe = *mythread()->trapframe;
+    nt->trapframe->epc = start_func;
+    nt->trapframe->sp = stack + STACK_SIZE;
+
+    nt->state = TRUNNABLE;
+    release(&nt->lock);
+    return nt->tid;
+}
 
 // ADDED: finding replacement as a mainthread
 struct thread *find_replacement(struct proc *p)
@@ -313,19 +334,20 @@ freethread(struct thread *t)
 static void
 freeproc(struct proc *p)
 {
-    // ADDED: freeing trapframe page
-    if (p->main_thread->trapframe)
-        kfree(p->main_thread->trapframe);
-
     // Free all threads to stay on the safe side.
     for (struct thread *t = p->threads; t < &p->threads[NTHREADS]; t++)
         freethread(t);
+    
+    // ADDED: freeing trapframe page
+    if (p->trapframes)
+        kfree(p->trapframes);
+    p->trapframes = 0;
+    p->trapframe_backup = 0;
 
     if (p->pagetable)
         proc_freepagetable(p->pagetable, p->sz);
-
-    p->trapframe_backup = 0;
     p->pagetable = 0;
+
     p->sz = 0;
     p->pid = 0;
     p->parent = 0;
@@ -357,8 +379,8 @@ proc_pagetable(struct proc *p)
         return 0;
     }
     // map the trapframe just below TRAMPOLINE, for trampoline.S.
-    if (mappages(pagetable, TRAPFRAME(MAIN_THREAD_INDEX), PGSIZE,
-                 (uint64)(p->main_thread->trapframe), PTE_R | PTE_W) < 0)
+    if (mappages(pagetable, TRAPFRAME(0), PGSIZE,
+                 (uint64)(p->trapframes), PTE_R | PTE_W) < 0)
     {
         uvmunmap(pagetable, TRAMPOLINE, 1, 0);
         uvmfree(pagetable, 0);
@@ -416,11 +438,12 @@ void userinit(void)
 
 // Grow or shrink user memory by n bytes.
 // Return 0 on success, -1 on failure.
+// ADDED: synchronization to growproc
 int growproc(int n)
 {
     uint sz;
     struct proc *p = myproc();
-
+    acquire(&p->lock);
     sz = p->sz;
     if (n > 0)
     {
@@ -434,6 +457,7 @@ int growproc(int n)
         sz = uvmdealloc(p->pagetable, sz, sz + n);
     }
     p->sz = sz;
+    release(&p->lock);
     return 0;
 }
 
@@ -633,7 +657,7 @@ int wait(uint64 addr)
 }
 //TODO: complete implementation of this function
 // ADDED: kthread join.
-int kthread_join(int thread_id, int *status)
+int kthread_join(int thread_id, uint64 status)
 {
     struct thread *t = mythread();
     struct proc *p = myproc();
@@ -662,7 +686,7 @@ int kthread_join(int thread_id, int *status)
     }
     if (target->tid == thread_id && target->state == TZOMBIE)
     {
-        if (status != 0 && copyout(p->pagetable, (uint64)status, (char *)&target->xstate, sizeof(int)) < 0)
+        if (status != 0 && copyout(p->pagetable, status, (char *)&target->xstate, sizeof(int)) < 0)
         {
             release(&target->lock);
             return -1;
@@ -708,21 +732,16 @@ void scheduler(void)
                 acquire(&t->lock);
                 if (t->state == TRUNNABLE)
                 {
+                    // if(p->pid == 3)
+                    //     printf("running thread %d with cid %d\n", t->tid, t->cid);
                     // Switch to chosen thread.  It is the threads's job
                     // to release its lock and then reacquire it
                     // before jumping back to us.
                     t->state = TRUNNING;
                     c->thread = t;
                     c->proc = p;
-                    int i;
-                    for (i = 0; i < 3; i++)
-                    {
-                        if (c == &cpus[i])
-                            break;
-                    }
-
                     swtch(&c->context, &t->context);
-
+                    // printf("Thread %d with cid %d came back from switch with state %d\n",t->tid,t->cid, t->state);
                     // Process is done running for now.
                     // It should have changed its p->state before coming back.
                     c->thread = 0;
@@ -791,7 +810,7 @@ void forkret(void)
         first = 0;
         fsinit(ROOTDEV);
     }
-
+    
     usertrapret();
 }
 
@@ -1026,7 +1045,7 @@ uint should_continue()
     {
         if ((pending & (1 << signal)) && signal != SIGSTOP)
         {
-            if (signal == SIGCONT && p->signal_handlers[SIGCONT] == SIG_DFL)
+            if (signal == SIGCONT && p->signal_handlers[SIGCONT] == (void *)SIG_DFL)
             {
                 retval = 1;
                 break;
@@ -1091,7 +1110,7 @@ void handle_kernel_signals()
             else if ((handler == (void *)SIG_DFL) || (handler == (void *)SIGKILL))
             {
                 p->pending_signals &= ~(1 << signal);
-                printf("dispatching kill handler\n");
+                // printf("dispatching kill handler\n");
                 kill_handler();
                 release(&p->lock);
                 return;
@@ -1137,3 +1156,7 @@ void handle_user_signals()
     release(&t->lock);
     release(&p->lock);
 }
+
+int kthread_id() { return mythread()->tid; }
+
+
