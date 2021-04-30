@@ -58,6 +58,10 @@ dkms.conf
 *.asm
 *.sym
 _*
+kernel
+.gdbinit
+initcode
+usys.S
 
 /Assignment1/xv6-riscv/kernel/kernel
 /Assignment1/xv6-riscv/user/initcode
