@@ -64,10 +64,10 @@ _*
 /Assignment1/xv6-riscv/mkfs/mkfs
 /Assignment1/xv6-riscv/user/usys.S
 
-/Assignment2/xv6-riscv/kernel/kernel
-/Assignment2/xv6-riscv/user/initcode
-/Assignment2/xv6-riscv/mkfs/mkfs
-/Assignment2/xv6-riscv/user/usys.S
+!/Assignment2/xv6-riscv/kernel/kernel
+!/Assignment2/xv6-riscv/user/initcode
+!/Assignment2/xv6-riscv/mkfs/mkfs
+!/Assignment2/xv6-riscv/user/usys.S
 
 .vscode/*
 !.vscode/settings.json

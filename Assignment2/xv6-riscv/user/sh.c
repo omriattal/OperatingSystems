@@ -81,30 +81,8 @@ void runcmd(struct cmd *cmd)
         ecmd = (struct execcmd *)cmd;
         if (ecmd->argv[0] == 0)
             exit(1);
-        
-        // ADDED: support for the new kill syscall from shell
-        if (strcmp(ecmd->argv[0], "kill") == 0)
-        {
-            int pid, signum;
-            for (char **argptr = &ecmd->argv[1]; *argptr != 0; argptr++)
-            {
-                pid = atoi(*argptr);
-                argptr++;
-                if (*argptr != 0)
-                {
-                    signum = atoi(*argptr);
-                    kill(pid, signum);
-                }
-                else{
-                    printf("kill: pid %d is missing signal\n", pid);
-                }
-            }
-        }
-        else
-        {
-            exec(ecmd->argv[0], ecmd->argv);
-            fprintf(2, "exec %s failed\n", ecmd->argv[0]);
-        }
+        exec(ecmd->argv[0], ecmd->argv);
+        fprintf(2, "exec %s failed\n", ecmd->argv[0]);
         break;
 
     case REDIR:
