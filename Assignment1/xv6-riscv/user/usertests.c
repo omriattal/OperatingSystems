@@ -902,7 +902,7 @@ void killstatus(char *s)
 			exit(0);
 		}
 		sleep(1);
-		kill(pid1, SIGKILL);
+		kill(pid1);
 		wait(&xst);
 				if (xst != -1)
 		{
@@ -964,9 +964,9 @@ void preempt(char *s)
 	}
 	close(pfds[0]);
 	printf("kill... ");
-	kill(pid1, SIGKILL);
-	kill(pid2, SIGKILL);
-	kill(pid3, SIGKILL);
+	kill(pid1);
+	kill(pid2);
+	kill(pid3);
 	printf("wait... ");
 	wait(0);
 	wait(0);
@@ -1036,7 +1036,7 @@ void reparent(char *s)
 			if (pid2 < 0)
 			{
 				printf("%s: fork2 failed\n", s);
-				kill(master_pid, SIGKILL);
+				kill(master_pid);
 				exit(1);
 			}
 			exit(0);
@@ -2637,7 +2637,7 @@ void sbrkfail(char *s)
 	{
 		if (pids[i] == -1)
 			continue;
-		kill(pids[i], SIGKILL);
+		kill(pids[i]);
 		wait(0);
 	}
 	if (c == (char *)0xffffffffffffffffL)

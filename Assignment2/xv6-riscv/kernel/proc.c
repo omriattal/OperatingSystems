@@ -238,6 +238,7 @@ found:
     t->state = TUSED;
     t->trapframe = p->trapframes + t_idx;
     t->parent = p;
+    t->killed = 0;
 
     // Set up new context to start executing at forkret,
     // which returns to user space.
@@ -259,12 +260,14 @@ int kthread_create(uint64 start_func, uint64 stack) {
     if((nt = allocthread(p)) == 0){
         return -1;
     }
+    
     *nt->trapframe = *mythread()->trapframe;
     nt->trapframe->epc = start_func;
     nt->trapframe->sp = stack + STACK_SIZE;
-
+    
     nt->state = TRUNNABLE;
     release(&nt->lock);
+    
     return nt->tid;
 }
 
@@ -301,7 +304,7 @@ void kthread_exit(int status)
         p->state = PZOMBIE;
         release(&p->lock);
         release(&t->lock);
-        exit(-1);
+        exit(status);
     }
 
     t->xstate = status;
@@ -548,7 +551,7 @@ void exit(int status)
 {
     struct proc *p = myproc();
     struct thread *t = mythread();
-
+    
     if (p == initproc)
         panic("init exiting");
 
@@ -666,6 +669,7 @@ int kthread_join(int thread_id, uint64 status)
     {
         return -1;
     }
+    // printf("process %d thread %d called kthread join w/ tid %d\n",myproc()->pid, t->tid,thread_id);
     for (struct thread *t_iter = p->threads; t_iter < &p->threads[NTHREADS]; t_iter++)
     {
         if (t_iter == t)
@@ -680,7 +684,7 @@ int kthread_join(int thread_id, uint64 status)
     }
     if (target == 0)
         return -1;
-    while (target->tid == thread_id && (target->state == TZOMBIE || target->state == TUNUSED))
+    while (target->tid == thread_id && target->state != TZOMBIE && target->state != TUNUSED)
     {
         sleep(target, &target->lock);
     }
@@ -740,7 +744,9 @@ void scheduler(void)
                     t->state = TRUNNING;
                     c->thread = t;
                     c->proc = p;
+
                     swtch(&c->context, &t->context);
+
                     // printf("Thread %d with cid %d came back from switch with state %d\n",t->tid,t->cid, t->state);
                     // Process is done running for now.
                     // It should have changed its p->state before coming back.

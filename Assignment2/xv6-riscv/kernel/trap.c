@@ -51,13 +51,14 @@ void usertrap(void)
     if (r_scause() == 8)
     {
         // system call
-        
+        // ADDED: if the thread is killed - commence thread exit procedure
+        if (t->killed){
+            kthread_exit(-1);
+        }
+
         // ADDED: if the process is killed - commence process exit procedure
         if (p->killed)
             exit(-1);
-        // ADDED: if the thread is killed - commence thread exit procedure
-        if(t->killed) 
-            kthread_exit(-1);
 
         // sepc points to the ecall instruction,
         // but we want to return to the next instruction.
@@ -66,7 +67,9 @@ void usertrap(void)
         // an interrupt will change sstatus &c registers,
         // so don't enable until done with those registers.
         intr_on();
-
+        // if(t->tid == 4){
+        //     printf("4 got to trap\n");
+        // }
         syscall();
     }
     else if ((which_dev = devintr()) != 0)
@@ -82,7 +85,7 @@ void usertrap(void)
     // ADDED: if the thread is killed - commence thread exit procedure
     if (t->killed)
         kthread_exit(-1);
-    
+
     // ADDED: if the process is killed - commence process exit procedure
     if (p->killed)
         exit(-1);
@@ -142,16 +145,7 @@ void usertrapret(void)
     // switches to the user page table, restores user registers,
     // and switches to user mode with sret.
     uint64 fn = TRAMPOLINE + (userret - trampoline);
-
-    if (t->tid == 4)
-    {
-        int a = 0;
-        a++;
-        ((void (*)(uint64, uint64))fn)(TRAPFRAME(t->cid), satp); // ADDED: using the TRAPFRAME macro in a new way.
-    }
-    else {
-        ((void (*)(uint64, uint64))fn)(TRAPFRAME(t->cid), satp); // ADDED: using the TRAPFRAME macro in a new way.
-    }
+    ((void (*)(uint64, uint64))fn)(TRAPFRAME(t->cid), satp); // ADDED: using the TRAPFRAME macro in a new way.
     
 }
 
