@@ -61,12 +61,12 @@ void signal_test(char *s){
 }
 
 void thread_test(char *s){
+    printf("starting thread test\n");
     int tid;
     int status;
     void* stack = malloc(STACK_SIZE);
     tid = kthread_create(test_thread, stack);
     kthread_join(tid,&status);
-
     tid = kthread_id();
     free(stack);
     printf("Finished testing threads, main thread id: %d, %d\n", tid,status);
@@ -997,7 +997,7 @@ exitwait(char *s)
         exit(1);
       }
       if(i != xstate) {
-        printf("%s: wait wrong exit status\n", s);
+        printf("%s: wait wrong exit status. pid=%d i=%d xstate=%d\n", s, pid, i, xstate);
         exit(1);
       }
     } else {
@@ -2874,16 +2874,15 @@ main(int argc, char *argv[])
     printf("Usage: usertests [-c] [testname]\n");
     exit(1);
   }
-  
   struct test {
     void (*f)(char *);
     char *s;
   } tests[] = {
 	  //ASS 2 Compilation tests:
-	  // {signal_test,"signal_test"},
+	  {signal_test,"signal_test"},
 	  {thread_test,"thread_test"},
-	//   {bsem_test,"bsem_test"},
-	//   {Csem_test,"Csem_test"},
+	  // {bsem_test,"bsem_test"},
+	  // {Csem_test,"Csem_test"},
 	  
 // ASS 1 tests
 //	{stracetest,"stracetest"},    //18 ticks, need to compare inputs
