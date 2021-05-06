@@ -95,7 +95,7 @@ struct cpu *mycpu(void);
 struct cpu *getmycpu(void);
 struct proc *myproc();
 struct thread *mythread(); // ADDED: mythread
-
+void exit_all_other_threads();
 
 
 

@@ -80,7 +80,7 @@ void usertrap(void)
     {
         printf("usertrap(): unexpected scause %p pid=%d tid=%d cid=%d\n", r_scause(), p->pid, t->tid, t->cid);
         printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
-        p->killed = 1;
+        t->killed = 1;
     }
     // ADDED: if the thread is killed - commence thread exit procedure
     if (t->killed)

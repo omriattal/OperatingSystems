@@ -257,6 +257,12 @@ found:
 int kthread_create(uint64 start_func, uint64 stack) {
     struct proc *p = myproc();
     struct thread *nt;
+    
+    acquire(&p->lock);
+    if(p->exiting)
+        return -1;
+    release(&p->lock);
+    
     if((nt = allocthread(p)) == 0){
         return -1;
     }
@@ -542,10 +548,27 @@ void reparent(struct proc *p)
     }
 }
 
+void exit_all_other_threads(){
+    struct proc *p = myproc();
+    struct thread *t = mythread();
+
+    for (struct thread *t_iter = p->threads; t_iter < &p->threads[NTHREADS]; t_iter++)
+    {
+        if(t_iter->tid == mythread()->tid) continue;
+        
+        acquire(&t_iter->lock);
+        t_iter->killed = 1;
+        if (t_iter->state == TSLEEPING)
+            t_iter->state = TRUNNABLE;
+        release(&t_iter->lock);
+    }
+    for (struct thread *t_iter = p->threads; t_iter < &p->threads[NTHREADS]; t_iter++)
+        kthread_join(t_iter->tid, 0);
+}
+
 // Exit the current process.  Does not return.
 // An exited process remains in the zombie state
 // until its parent calls wait().
-
 // ADDED: overhauled the exit syscall to kill all other threads of the same process
 void exit(int status)
 {
@@ -554,6 +577,13 @@ void exit(int status)
     
     if (p == initproc)
         panic("init exiting");
+    if(p->exiting)
+        kthread_exit(-1);
+    acquire(&p->lock);
+    if(!p->exiting)
+        p->exiting = 1;
+    release(&p->lock);
+    exit_all_other_threads();
 
     // Close all open files.
     for (int fd = 0; fd < NOFILE; fd++)
@@ -571,17 +601,6 @@ void exit(int status)
     end_op();
     p->cwd = 0;
 
-    for (struct thread *t_iter = p->threads; t_iter < &p->threads[NTHREADS]; t_iter++)
-    {
-        if(t_iter->tid == mythread()->tid) continue;
-        
-        acquire(&t_iter->lock);
-        t_iter->killed = 1;
-        if (t_iter->state == TSLEEPING)
-            t_iter->state = TRUNNABLE;
-        release(&t_iter->lock);
-        kthread_join(t_iter->tid, 0);
-    }
 
     acquire(&wait_lock);
 

@@ -21,16 +21,7 @@ int exec(char *path, char **argv)
     pagetable_t pagetable = 0, oldpagetable;
     struct proc *p = myproc();
     struct thread *t = mythread();
-    for(struct thread *t_iter = p->threads; t_iter < &p->threads[NTHREADS]; t_iter++){
-        if(t_iter->tid == t->tid) continue;
-        acquire(&t_iter->lock);
-        t_iter->killed = 1;
-        if(t_iter->state == TSLEEPING)
-            t_iter->state = TRUNNABLE;
-        release(&t_iter->lock);
-        kthread_join(t_iter->tid, 0);
-        // printf("got to exec, join thread %d \n", t->tid);
-    }
+    exit_all_other_threads();
     p->main_thread = t;
 
     // ADDED: passing signal handling data to new proces

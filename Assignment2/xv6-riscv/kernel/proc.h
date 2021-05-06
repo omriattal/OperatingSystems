@@ -161,6 +161,7 @@ struct proc
     uint handling_signal;
     int stopped; // ADDED: If non-zero, was stopped
     int killed;
+    int exiting;
 
     int xstate; // Exit status to be returned to parent's wait
 
