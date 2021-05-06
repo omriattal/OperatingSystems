@@ -4,20 +4,35 @@
 
 #define print(s) printf("%s\n", s);
 #define STACK_SIZE 4000
-
-void func() {
-    print("I got 99 problems but a thread ain't one")
+#define NTHREADS 2
+int shared = 0;
+void func()
+{
+    sleep(1);
+    // printf("woke up\n");
+    shared++;
+    // printf("!!!!!!!!!!!!!!!!!!!!!!1\n");
     kthread_exit(7);
 }
 
 int main(int argc, char *argv[])
 {
-    int tid;
-    int status;
-    void* stack = malloc(STACK_SIZE);
-    tid = kthread_create(func, stack);
-    kthread_join(tid,&status);
-    tid = kthread_id();
-    free(stack);
+    int tids[NTHREADS];
+    void *stacks[NTHREADS];
+    for (int i = 0; i < NTHREADS; i++)
+    {
+        void *stack = malloc(STACK_SIZE);
+        tids[i] = kthread_create(func, stack);
+        stacks[i] = stack;
+    }
+
+    for (int i = 0; i < NTHREADS; i++)
+    {
+        int status;
+        kthread_join(tids[i], &status);
+        free(stacks[i]);
+        printf("the status is: %d\n", status);
+    }
+    printf("%d\n", shared);
     exit(0);
 }

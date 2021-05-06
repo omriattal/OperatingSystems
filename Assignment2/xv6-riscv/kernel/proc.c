@@ -20,6 +20,7 @@ struct spinlock tid_lock;
 extern void forkret(void);
 static void freeproc(struct proc *p);
 static void freethread(struct thread *); // ADDED: freethread
+void wakeup_thread(void *chan);
 extern char trampoline[];                // trampoline.S
 extern void *call_start;
 extern void *call_end;
@@ -57,6 +58,7 @@ void procinit(void)
     for (p = proc; p < &proc[NPROC]; p++)
     {
         initlock(&p->lock, "proc");
+        initlock(&p->join_lock, "join_lock");
         for (int t = 0; t < NTHREADS; t++)
         {
             initlock(&p->threads[t].lock, "thread");
@@ -155,6 +157,8 @@ allocproc(void)
 found:
     p->pid = allocpid();
     p->state = PUSED;
+    p->killed = 0;
+    p->exiting = 0;
 
     // Create the main thread
     struct thread *t = &p->threads[MAIN_THREAD_INDEX];
@@ -237,6 +241,7 @@ allocthread(struct proc *p)
 found:
     t->cid = t_idx;
     t->tid = alloctid();
+    t->chan = 0;
     t->state = TUSED;
     t->trapframe = p->trapframes + t_idx;
     t->parent = p;
@@ -256,6 +261,14 @@ found:
     return t;
 }
 
+// void print_thread_array(struct proc* proc) {
+//     printf("the thread ids of proc %d are: ",proc->pid);
+//     for (int i = 0; i < NTHREADS; i++)
+//     {
+//         printf("%d, ",proc->threads[i].tid);
+//     }
+//     printf("\n");
+// }
 // ADDED: kthread create
 int kthread_create(uint64 start_func, uint64 stack)
 {
@@ -278,10 +291,9 @@ int kthread_create(uint64 start_func, uint64 stack)
     *nt->trapframe = *mythread()->trapframe;
     nt->trapframe->epc = start_func;
     nt->trapframe->sp = stack + STACK_SIZE;
-
     nt->state = TRUNNABLE;
     release(&nt->lock);
-
+   //  print_thread_array(p);
     return nt->tid;
 }
 
@@ -316,16 +328,19 @@ void kthread_exit(int status)
     {
         p->main_thread = p->threads;
         p->state = PZOMBIE;
-        release(&p->lock);
         release(&t->lock);
+        release(&p->lock);
         exit(status);
     }
+    release(&t->lock);
+    release(&p->lock);
 
+    acquire(&p->join_lock);
+    wakeup_thread(t);
+    acquire(&t->lock);
     t->xstate = status;
     t->state = TZOMBIE;
-    release(&p->lock);
-    wakeup(t);
-
+    release(&p->join_lock);
     sched();
     panic("! at the disco");
 }
@@ -342,6 +357,7 @@ freethread(struct thread *t)
     t->parent = 0;
     t->chan = 0;
     t->killed = 0;
+    t->chan = 0;
     t->state = TUNUSED;
 }
 
@@ -631,12 +647,12 @@ void exit(int status)
     wakeup(p->parent);
 
     acquire(&p->lock);
+    acquire(&t->lock);
     p->xstate = status;
     p->state = PZOMBIE;
-    release(&p->lock);
-    acquire(&t->lock);
     t->xstate = status;
     t->state = TZOMBIE;
+    release(&p->lock);
     release(&wait_lock);
     // printf("I finished the exit system call\n");
     // Jump into the scheduler, never to return.
@@ -651,9 +667,8 @@ int wait(uint64 addr)
     struct proc *np;
     int havekids, pid;
     struct proc *p = myproc();
-
+    struct thread *t = mythread();
     acquire(&wait_lock);
-
     for (;;)
     {
         // Scan through table looking for exited children.
@@ -687,7 +702,7 @@ int wait(uint64 addr)
         }
 
         // No point waiting if we don't have any children.
-        if (!havekids || p->killed)
+        if (!havekids || p->killed || t->killed)
         {
             release(&wait_lock);
             return -1;
@@ -708,7 +723,6 @@ int kthread_join(int thread_id, uint64 status)
     {
         return -1;
     }
-    // printf("process %d thread %d called kthread join w/ tid %d\n",myproc()->pid, t->tid,thread_id);
     for (struct thread *t_iter = p->threads; t_iter < &p->threads[NTHREADS]; t_iter++)
     {
         if (t_iter == t)
@@ -717,6 +731,8 @@ int kthread_join(int thread_id, uint64 status)
         if (t_iter->tid == thread_id)
         {
             target = t_iter;
+            acquire(&p->join_lock);
+            release(&target->lock);
             break;
         }
         release(&t_iter->lock);
@@ -725,8 +741,11 @@ int kthread_join(int thread_id, uint64 status)
         return -1;
     while (!t->killed && target->tid == thread_id && target->state != TZOMBIE && target->state != TUNUSED)
     {
-        sleep(target, &target->lock);
+        printf("thread %d sleeping on chan %p with tid:%d\n", t->tid, target,target->tid);
+        sleep(target, &p->join_lock);
     }
+    acquire(&target->lock);
+    release(&p->join_lock);
     if (!t->killed)
     {
         release(&target->lock);
@@ -867,7 +886,7 @@ void forkret(void)
 // Atomically release lock and sleep on chan.
 // Reacquires lock when awakened.
 //ADDED: changed to support threads.
-void sleep(void *chan, struct spinlock *lk)
+void  sleep(void *chan, struct spinlock *lk)
 {
     struct thread *t = mythread();
 
@@ -883,7 +902,6 @@ void sleep(void *chan, struct spinlock *lk)
     // Go to sleep.
     t->chan = chan;
     t->state = TSLEEPING;
-
     sched();
 
     // Tidy up.
@@ -901,25 +919,45 @@ void wakeup(void *chan)
 {
     struct proc *p;
     struct thread *t;
-
     for (p = proc; p < &proc[NPROC]; p++)
     {
         acquire(&p->lock);
         for (t = p->threads; t < &p->threads[NTHREADS]; t++)
         {
-            if (t != mythread())
+            acquire(&t->lock);
+            if (t->state == TSLEEPING && t->chan == chan)
             {
-                acquire(&t->lock);
-                if (t->state == TSLEEPING && t->chan == chan)
-                {
-                    t->state = TRUNNABLE;
-                }
-                release(&t->lock);
+                t->state = TRUNNABLE;
             }
+            release(&t->lock);
         }
         release(&p->lock);
     }
 }
+// Wake up all processes sleeping on chan.
+// Must be called without any t->lock.
+//ADDED: waking up all threads.
+void wakeup_thread(void *chan)
+{
+    struct proc *p = myproc();
+    struct thread *t;
+    // acquire(&p->lock);
+    for (t = p->threads; t < &p->threads[NTHREADS]; t++)
+    {   
+        printf("am i stuck %d? call %d\n", mythread()->tid, t->tid);
+        acquire(&t->lock);
+        if (t->state == TSLEEPING && t->chan == chan)
+        {
+            printf("waking up thread %d on chan %p\n", t->tid, chan);
+            t->state = TRUNNABLE;
+            release(&t->lock);
+            break;
+        }
+        release(&t->lock);
+    }
+    // release(&p->lock);
+}
+
 
 // Kill the process with the given pid.
 // The victim won't exit until it tries to return

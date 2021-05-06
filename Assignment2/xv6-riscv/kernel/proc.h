@@ -147,6 +147,7 @@ struct thread
 struct proc
 {
     struct spinlock lock;
+    struct spinlock join_lock;
 
     int pid;
     // Process ID
