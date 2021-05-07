@@ -52,13 +52,11 @@ void proc_mapstacks(pagetable_t kpgtbl)
 void procinit(void)
 {
     struct proc *p;
-
     initlock(&pid_lock, "nextpid");
     initlock(&wait_lock, "wait_lock");
     for (p = proc; p < &proc[NPROC]; p++)
     {
         initlock(&p->lock, "proc");
-        initlock(&p->join_lock, "join_lock");
         for (int t = 0; t < NTHREADS; t++)
         {
             initlock(&p->threads[t].lock, "thread");
@@ -162,7 +160,6 @@ found:
 
     // Create the main thread
     struct thread *t = &p->threads[MAIN_THREAD_INDEX];
-
     // Allocate a trapframe page that will hold all the threads trap frames an the backup trapframe.
     if ((p->trapframes = (struct trapframe *)kalloc()) == 0)
     {
@@ -282,18 +279,16 @@ int kthread_create(uint64 start_func, uint64 stack)
         return -1;
     }
     release(&p->lock);
-
+    
     if ((nt = allocthread(p)) == 0)
     {
         return -1;
     }
-
     *nt->trapframe = *mythread()->trapframe;
     nt->trapframe->epc = start_func;
     nt->trapframe->sp = stack + STACK_SIZE;
     nt->state = TRUNNABLE;
     release(&nt->lock);
-   //  print_thread_array(p);
     return nt->tid;
 }
 
@@ -305,7 +300,7 @@ struct thread *find_replacement(struct proc *p)
         if (t != p->main_thread)
         {
             acquire(&t->lock);
-            if (t->state != TUNUSED)
+            if (t->state != TUNUSED && t->state != TZOMBIE)
             {
                 release(&t->lock);
                 return t;
@@ -333,14 +328,11 @@ void kthread_exit(int status)
         exit(status);
     }
     release(&t->lock);
-    release(&p->lock);
-
-    acquire(&p->join_lock);
     wakeup_thread(t);
-    acquire(&t->lock);
     t->xstate = status;
     t->state = TZOMBIE;
-    release(&p->join_lock);
+    acquire(&t->lock);
+    release(&p->lock);
     sched();
     panic("! at the disco");
 }
@@ -507,14 +499,13 @@ int fork(void)
     int signal, pid;
     struct proc *np;
     struct thread *t = mythread();
-    struct proc *p = t->parent;
+    struct proc *p = myproc();
 
     // Allocate process (and its main thread)
     if ((np = allocproc()) == 0)
     {
         return -1;
     }
-
     // Copy user memory from parent to child.
     if (uvmcopy(p->pagetable, np->pagetable, p->sz) < 0)
     {
@@ -540,10 +531,9 @@ int fork(void)
 
     pid = np->pid;
 
-    release(&np->lock);
 
-    acquire(&wait_lock);
-    np->parent = p;
+    release(&np->lock);
+    
     np->signal_mask = p->signal_mask;
     for (int signal = 0; signal < SIGNAL_SIZE; signal++)
     {
@@ -551,12 +541,15 @@ int fork(void)
         np->signal_handlers_masks[signal] = p->signal_handlers_masks[signal];
     }
 
+    acquire(&wait_lock);
+    np->parent = p;
     release(&wait_lock);
+    
+
 
     acquire(&np->main_thread->lock);
     np->main_thread->state = TRUNNABLE;
     release(&np->main_thread->lock);
-
     return pid;
 }
 
@@ -580,12 +573,10 @@ void exit_all_other_threads()
 {    
     struct proc *p = myproc();
     struct thread *t = mythread();
-
     for (struct thread *t_iter = p->threads; t_iter < &p->threads[NTHREADS]; t_iter++)
     {
-        if (t_iter->tid == t->tid)
+        if (t_iter == t)
             continue;
-
         acquire(&t_iter->lock);
         t_iter->killed = 1;
         if (t_iter->state == TSLEEPING)
@@ -623,6 +614,7 @@ void exit(int status)
         kthread_exit(-2);
     }
     exit_all_other_threads();
+    p->main_thread = t;
     // Close all open files.
     for (int fd = 0; fd < NOFILE; fd++)
     {
@@ -654,7 +646,7 @@ void exit(int status)
     t->state = TZOMBIE;
     release(&p->lock);
     release(&wait_lock);
-    // printf("I finished the exit system call\n");
+
     // Jump into the scheduler, never to return.
     sched();
     panic("zombie exit");
@@ -679,24 +671,27 @@ int wait(uint64 addr)
             {
                 // make sure the child isn't still in exit() or swtch().
                 acquire(&np->lock);
-
+                acquire(&np->main_thread->lock);
                 havekids = 1;
-                if (np->state == PZOMBIE)
+                if (np->state == PZOMBIE && np->main_thread->state == TZOMBIE)
                 {
                     // Found one.
                     pid = np->pid;
                     if (addr != 0 && copyout(p->pagetable, addr, (char *)&np->xstate,
                                              sizeof(np->xstate)) < 0)
                     {
+                        release(&np->main_thread->lock);
                         release(&np->lock);
                         release(&wait_lock);
                         return -1;
                     }
                     freeproc(np);
+                    release(&np->main_thread->lock);
                     release(&np->lock);
                     release(&wait_lock);
                     return pid;
                 }
+                release(&np->main_thread->lock);
                 release(&np->lock);
             }
         }
@@ -723,6 +718,8 @@ int kthread_join(int thread_id, uint64 status)
     {
         return -1;
     }
+    // printf("searching\n");
+    acquire(&p->lock);
     for (struct thread *t_iter = p->threads; t_iter < &p->threads[NTHREADS]; t_iter++)
     {
         if (t_iter == t)
@@ -731,22 +728,25 @@ int kthread_join(int thread_id, uint64 status)
         if (t_iter->tid == thread_id)
         {
             target = t_iter;
-            acquire(&p->join_lock);
+            // printf("found\n");
             release(&target->lock);
             break;
         }
         release(&t_iter->lock);
     }
-    if (target == 0)
+    if (target == 0){
+        // printf("not found\n");
+        release(&p->lock);
         return -1;
+    }
     while (!t->killed && target->tid == thread_id && target->state != TZOMBIE && target->state != TUNUSED)
     {
-        printf("thread %d sleeping on chan %p with tid:%d\n", t->tid, target,target->tid);
-        sleep(target, &p->join_lock);
+        sleep(target, &p->lock);
     }
     acquire(&target->lock);
-    release(&p->join_lock);
-    if (!t->killed)
+    release(&p->lock);
+    // printf("joined\n");
+    if (t->killed)
     {
         release(&target->lock);
         return -1;
@@ -761,6 +761,7 @@ int kthread_join(int thread_id, uint64 status)
         freethread(target);
     }
     release(&target->lock);
+    // printf("collected\n");
     return 0;
 }
 
@@ -792,15 +793,13 @@ void scheduler(void)
                 continue;
             }
             release(&p->lock);
-            // TODO: check if we could lock the process here instead of down there.
 
+            // TODO: check if we could lock the process here instead of down there.
             for (t = p->threads; t < &p->threads[NTHREADS]; t++)
             {
                 acquire(&t->lock);
                 if (t->state == TRUNNABLE)
                 {
-                    // if(p->pid == 3)
-                    //     printf("running thread %d with cid %d\n", t->tid, t->cid);
                     // Switch to chosen thread.  It is the threads's job
                     // to release its lock and then reacquire it
                     // before jumping back to us.
@@ -809,8 +808,6 @@ void scheduler(void)
                     c->proc = p;
 
                     swtch(&c->context, &t->context);
-
-                    // printf("Thread %d with cid %d came back from switch with state %d\n",t->tid,t->cid, t->state);
                     // Process is done running for now.
                     // It should have changed its p->state before coming back.
                     c->thread = 0;
@@ -934,6 +931,7 @@ void wakeup(void *chan)
         release(&p->lock);
     }
 }
+
 // Wake up all processes sleeping on chan.
 // Must be called without any t->lock.
 //ADDED: waking up all threads.
@@ -944,11 +942,9 @@ void wakeup_thread(void *chan)
     // acquire(&p->lock);
     for (t = p->threads; t < &p->threads[NTHREADS]; t++)
     {   
-        printf("am i stuck %d? call %d\n", mythread()->tid, t->tid);
         acquire(&t->lock);
         if (t->state == TSLEEPING && t->chan == chan)
         {
-            printf("waking up thread %d on chan %p\n", t->tid, chan);
             t->state = TRUNNABLE;
             release(&t->lock);
             break;
@@ -1186,19 +1182,16 @@ void handle_kernel_signals()
             if ((handler == (void *)SIG_DFL && signal == SIGSTOP) || handler == (void *)SIGSTOP)
             {
                 p->pending_signals &= ~(1 << signal);
-                printf("dispatching stop handler\n");
                 stop_handler();
             }
             else if ((handler == (void *)SIG_DFL && signal == SIGCONT) || handler == (void *)SIGCONT)
             {
                 p->pending_signals &= ~(1 << signal);
-                printf("dispatching cont handler\n");
                 cont_handler(signal);
             }
             else if ((handler == (void *)SIG_DFL) || (handler == (void *)SIGKILL))
             {
                 p->pending_signals &= ~(1 << signal);
-                // printf("dispatching kill handler\n");
                 kill_handler();
                 release(&p->lock);
                 return;
@@ -1206,7 +1199,6 @@ void handle_kernel_signals()
             else if (handler == (void *)SIG_IGN)
             {
                 p->pending_signals &= ~(1 << signal);
-                printf("ignoring signals\n");
             }
         }
     }

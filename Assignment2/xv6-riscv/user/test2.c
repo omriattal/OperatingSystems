@@ -4,14 +4,12 @@
 
 #define print(s) printf("%s\n", s);
 #define STACK_SIZE 4000
-#define NTHREADS 2
+#define NTHREADS 9
 int shared = 0;
 void func()
 {
-    sleep(1);
-    // printf("woke up\n");
+    sleep(5);
     shared++;
-    // printf("!!!!!!!!!!!!!!!!!!!!!!1\n");
     kthread_exit(7);
 }
 
@@ -25,12 +23,11 @@ int main(int argc, char *argv[])
         tids[i] = kthread_create(func, stack);
         stacks[i] = stack;
     }
-
     for (int i = 0; i < NTHREADS; i++)
     {
         int status;
         kthread_join(tids[i], &status);
-        free(stacks[i]);
+        free(stacks[i]);    
         printf("the status is: %d\n", status);
     }
     printf("%d\n", shared);

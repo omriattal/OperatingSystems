@@ -135,6 +135,7 @@ UPROGS=\
 	$U/_test\
 	$U/_test2\
 	$U/_test7\
+	$U/_usertests_threads\
 
 fs.img: mkfs/mkfs README $(UPROGS)
 	mkfs/mkfs fs.img README $(UPROGS)
@@ -173,3 +174,4 @@ qemu-gdb: $K/kernel .gdbinit fs.img
 	@echo "*** Now run 'gdb' in another window." 1>&2
 	$(QEMU) $(QEMUOPTS) -S $(QEMUGDB)
 
+\
