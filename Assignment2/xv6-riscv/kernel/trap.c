@@ -57,9 +57,11 @@ void usertrap(void)
         }
 
         // ADDED: if the process is killed - commence process exit procedure
-        if (p->killed)
+        if (p->killed) {
+            printf("process %d got jacked in usertrap\n",p->pid);
             exit(-1);
-
+        }
+            
         // sepc points to the ecall instruction,
         // but we want to return to the next instruction.
         t->trapframe->epc += 4;

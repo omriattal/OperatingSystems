@@ -753,7 +753,7 @@ void wakeup(void *chan)
 			if (p->state == SLEEPING && p->chan == chan)
 			{
 				p->state = RUNNABLE;
-				p->turn = get_turn(); // ADDED: determin the turn of the process when it wakes up
+				p->turn = get_turn(); // ADDED: determine the turn of the process when it wakes up
 			}
 			release(&p->lock);
 		}

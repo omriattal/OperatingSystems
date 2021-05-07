@@ -78,10 +78,11 @@ pipewrite(struct pipe *pi, uint64 addr, int n)
 {
   int i = 0;
   struct proc *pr = myproc();
+  struct thread *tr = mythread();
 
   acquire(&pi->lock);
   while(i < n){
-    if(pi->readopen == 0 || pr->killed){
+    if(pi->readopen == 0 || pr->killed || tr->killed){
       release(&pi->lock);
       return -1;
     }
@@ -128,3 +129,4 @@ piperead(struct pipe *pi, uint64 addr, int n)
   release(&pi->lock);
   return i;
 }
+
