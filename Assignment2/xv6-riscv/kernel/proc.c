@@ -5,10 +5,14 @@
 #include "spinlock.h"
 #include "proc.h"
 #include "defs.h"
+#include "bsem.h"
 
 struct cpu cpus[NCPU];
 
 struct proc proc[NPROC];
+
+struct bsem bsem[MAX_BSEM];
+struct spinlock bsem_lock;
 
 struct proc *initproc;
 
@@ -21,7 +25,7 @@ extern void forkret(void);
 static void freeproc(struct proc *p);
 static void freethread(struct thread *); // ADDED: freethread
 void wakeup_thread(void *chan);
-extern char trampoline[];                // trampoline.S
+extern char trampoline[]; // trampoline.S
 extern void *call_start;
 extern void *call_end;
 
@@ -52,7 +56,9 @@ void proc_mapstacks(pagetable_t kpgtbl)
 void procinit(void)
 {
     struct proc *p;
+    initlock(&bsem_lock, "bsemlock");
     initlock(&pid_lock, "nextpid");
+    initlock(&tid_lock, "tidlock");
     initlock(&wait_lock, "wait_lock");
     for (p = proc; p < &proc[NPROC]; p++)
     {
@@ -279,7 +285,7 @@ int kthread_create(uint64 start_func, uint64 stack)
         return -1;
     }
     release(&p->lock);
-    
+
     if ((nt = allocthread(p)) == 0)
     {
         return -1;
@@ -470,7 +476,7 @@ int growproc(int n)
 {
     uint sz;
     struct proc *p = myproc();
-    
+
     acquire(&p->lock);
     sz = p->sz;
     if (n > 0)
@@ -531,9 +537,8 @@ int fork(void)
 
     pid = np->pid;
 
-
     release(&np->lock);
-    
+
     np->signal_mask = p->signal_mask;
     for (int signal = 0; signal < SIGNAL_SIZE; signal++)
     {
@@ -544,8 +549,6 @@ int fork(void)
     acquire(&wait_lock);
     np->parent = p;
     release(&wait_lock);
-    
-
 
     acquire(&np->main_thread->lock);
     np->main_thread->state = TRUNNABLE;
@@ -570,7 +573,7 @@ void reparent(struct proc *p)
 }
 
 void exit_all_other_threads()
-{    
+{
     struct proc *p = myproc();
     struct thread *t = mythread();
     for (struct thread *t_iter = p->threads; t_iter < &p->threads[NTHREADS]; t_iter++)
@@ -734,7 +737,8 @@ int kthread_join(int thread_id, uint64 status)
         }
         release(&t_iter->lock);
     }
-    if (target == 0){
+    if (target == 0)
+    {
         // printf("not found\n");
         release(&p->lock);
         return -1;
@@ -883,7 +887,7 @@ void forkret(void)
 // Atomically release lock and sleep on chan.
 // Reacquires lock when awakened.
 //ADDED: changed to support threads.
-void  sleep(void *chan, struct spinlock *lk)
+void sleep(void *chan, struct spinlock *lk)
 {
     struct thread *t = mythread();
 
@@ -941,7 +945,7 @@ void wakeup_thread(void *chan)
     struct thread *t;
     // acquire(&p->lock);
     for (t = p->threads; t < &p->threads[NTHREADS]; t++)
-    {   
+    {
         acquire(&t->lock);
         if (t->state == TSLEEPING && t->chan == chan)
         {
@@ -953,7 +957,6 @@ void wakeup_thread(void *chan)
     }
     // release(&p->lock);
 }
-
 
 // Kill the process with the given pid.
 // The victim won't exit until it tries to return
@@ -1112,13 +1115,6 @@ void sigret(void)
     release(&p->lock);
 }
 
-// ADDED: kill signal handler
-void kill_handler()
-{
-    struct proc *p = myproc();
-    p->killed = 1;
-}
-
 uint should_continue()
 {
     struct proc *p = myproc();
@@ -1145,6 +1141,37 @@ uint should_continue()
     return retval;
 }
 
+uint got_killing_signal()
+{
+    struct proc *p = myproc();
+    uint retval = 0;
+    acquire(&p->lock);
+    uint pending = p->pending_signals & ~(p->signal_mask);
+    for (int signal = 0; signal < SIGNAL_SIZE; signal++)
+    {
+        if ((pending & (1 << signal)) && signal != SIGSTOP)
+        {
+            if (signal == SIGKILL)
+            {
+                retval = 1;
+                break;
+            }
+            else if (signal == SIGCONT && p->signal_handlers[signal] == (void *)SIGKILL)
+            {
+                retval = 1;
+                break;
+            }
+            else if (p->signal_handlers[signal] == (void *)SIG_DFL || p->signal_handlers[signal] == (void *)SIGKILL)
+            {
+                retval = 1;
+                break;
+            }
+        }
+    }
+    release(&p->lock);
+    return retval;
+}
+
 // ADDED: stop signal handler
 void stop_handler()
 {
@@ -1152,7 +1179,7 @@ void stop_handler()
     p->stopped = 1;
     p->signal_handlers[SIGCONT] = (void *)SIG_DFL;
     release(&p->lock);
-    while (p->stopped && !should_continue())
+    while (p->stopped && !should_continue() && !got_killing_signal())
     {
         yield();
     }
@@ -1192,9 +1219,8 @@ void handle_kernel_signals()
             else if ((handler == (void *)SIG_DFL) || (handler == (void *)SIGKILL))
             {
                 p->pending_signals &= ~(1 << signal);
-                kill_handler();
                 release(&p->lock);
-                return;
+                exit(-1);
             }
             else if (handler == (void *)SIG_IGN)
             {
@@ -1238,3 +1264,71 @@ void handle_user_signals()
 }
 
 int kthread_id() { return mythread()->tid; }
+
+/**
+BINARY SEMAPHORE
+*/
+
+int isValidDescriptor(int descriptor) { return descriptor >= 0 && descriptor < MAX_BSEM; }
+
+int bsem_alloc()
+{
+    acquire(&bsem_lock);
+    int descriptor = 0;
+    for (struct bsem *bs = bsem; bs < &bsem[MAX_BSEM]; bs++)
+    {
+        if (bs->state == BSUNUSED)
+        {
+            bs->state = BSUSED;
+            bs->value = BSFREE;
+            initlock(&bs->value_lock, "bsem value lock");
+
+            release(&bsem_lock);
+            return descriptor;
+        }
+        descriptor++;
+    }
+    release(&bsem_lock);
+    return -1;
+}
+
+void bsem_free(int descriptor)
+{
+    if (isValidDescriptor(descriptor))
+    {
+        acquire(&bsem_lock);
+        bsem[descriptor].state = BSUNUSED;
+        bsem[descriptor].value = BSFREE;
+        release(&bsem_lock);
+    }
+}
+void bsem_down(int descriptor)
+{
+    struct bsem *bs = &bsem[descriptor];
+    acquire(&bs->value_lock);
+    if (bs->state == BSUNUSED || !isValidDescriptor(descriptor))
+    {
+        release(&bs->value_lock);
+        return;
+    }
+    while (bs->value == BSACQUIRED)
+    {
+        sleep(bs, &bs->value_lock);
+    }
+    bs->value = BSACQUIRED;
+    release(&bs->value_lock);
+}
+
+void bsem_up(int descriptor)
+{
+    struct bsem *bs = &bsem[descriptor];
+    acquire(&bs->value_lock);
+    if (bs->state == BSUNUSED || !isValidDescriptor(descriptor))
+    {
+        release(&bs->value_lock);
+        return;
+    }
+    bs->value = BSFREE;
+    release(&bs->value_lock);
+    wakeup(bs);
+}

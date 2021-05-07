@@ -140,3 +140,23 @@ kthread_join:
  li a7, SYS_kthread_join
  ecall
  ret
+.global bsem_alloc
+bsem_alloc:
+ li a7, SYS_bsem_alloc
+ ecall
+ ret
+.global bsem_free
+bsem_free:
+ li a7, SYS_bsem_free
+ ecall
+ ret
+.global bsem_down
+bsem_down:
+ li a7, SYS_bsem_down
+ ecall
+ ret
+.global bsem_up
+bsem_up:
+ li a7, SYS_bsem_up
+ ecall
+ ret

@@ -97,9 +97,6 @@ struct proc *myproc();
 struct thread *mythread(); // ADDED: mythread
 void exit_all_other_threads();
 
-
-
-
 void procinit(void);
 void scheduler(void) __attribute__((noreturn));
 void sched(void);
@@ -119,6 +116,11 @@ int kthread_create(uint64 start_func, uint64 stack); // ADDED: kthread create sy
 int kthread_id(); // ADDED: kthread id syste, call
 void kthread_exit(int status); //ADDED: kthread exit system call
 int kthread_join(int thread_id, uint64 status); //ADDED: kthread exit system call
+
+int bsem_alloc();
+void bsem_free(int descriptor);
+void bsem_down(int descriptor);
+void bsem_up(int descriptor);
 
 // swtch.S
 void swtch(struct context *, struct context *);

@@ -108,11 +108,12 @@ piperead(struct pipe *pi, uint64 addr, int n)
 {
   int i;
   struct proc *pr = myproc();
+  struct thread *tr = mythread();
   char ch;
 
   acquire(&pi->lock);
   while(pi->nread == pi->nwrite && pi->writeopen){  //DOC: pipe-empty
-    if(pr->killed){
+    if(pr->killed|| tr->killed){
       release(&pi->lock);
       return -1;
     }

@@ -31,6 +31,10 @@ int kthread_create(void (*start_func) (), void *stack);
 int kthread_id();
 int kthread_exit(int status);
 int kthread_join(int thread_id, int *status);
+int bsem_alloc();
+int bsem_free(int descriptor);
+int bsem_up(int descriptor);
+int bsem_down(int descriptor);
 
 // ulib.c
 int stat(const char*, struct stat*);

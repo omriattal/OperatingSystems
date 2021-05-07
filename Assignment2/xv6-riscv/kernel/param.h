@@ -20,3 +20,4 @@
 #define SIGCONT 19
 #define SIGNAL_SIZE 32
 #define STACK_SIZE 4000
+#define MAX_BSEM 128
