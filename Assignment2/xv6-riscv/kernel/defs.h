@@ -96,6 +96,7 @@ struct cpu *getmycpu(void);
 struct proc *myproc();
 struct thread *mythread(); // ADDED: mythread
 void exit_all_other_threads();
+void stop();
 
 void procinit(void);
 void scheduler(void) __attribute__((noreturn));

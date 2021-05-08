@@ -133,7 +133,6 @@ UPROGS=\
 	$U/_wc\
 	$U/_zombie\
 	$U/_test\
-	$U/_test2\
 	$U/_test7\
 	$U/_usertests_threads\
 

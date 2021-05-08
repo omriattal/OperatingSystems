@@ -112,7 +112,9 @@ void usertrapret(void)
         handle_kernel_signals();
         handle_user_signals();
     }
-
+    if(p->stopped){
+        stop();
+    }
     // we're about to switch the destination of traps from
     // kerneltrap() to usertrap(), so turn off interrupts until
     // we're back in user space, where usertrap() is correct.
@@ -139,7 +141,6 @@ void usertrapret(void)
     w_sstatus(x);
     // set S Exception Program Counter to the saved user pc.
     w_sepc(t->trapframe->epc);
-
     // tell trampoline.S the user page table to switch to.
     uint64 satp = MAKE_SATP(p->pagetable);
 
@@ -148,7 +149,6 @@ void usertrapret(void)
     // and switches to user mode with sret.
     uint64 fn = TRAMPOLINE + (userret - trampoline);
     ((void (*)(uint64, uint64))fn)(TRAPFRAME(t->cid), satp); // ADDED: using the TRAPFRAME macro in a new way.
-    
 }
 
 // interrupts and exceptions from kernel code go here via kernelvec,

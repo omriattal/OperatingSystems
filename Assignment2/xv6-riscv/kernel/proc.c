@@ -353,6 +353,7 @@ freethread(struct thread *t)
     t->kstack = 0;
     t->trapframe = 0;
     t->tid = 0;
+    t->cid = 0;
     t->parent = 0;
     t->chan = 0;
     t->killed = 0;
@@ -386,8 +387,18 @@ freeproc(struct proc *p)
     p->name[0] = 0;
     p->xstate = 0;
     p->exiting = 0;
-    p->state = PUNUSED;
+    
     p->killed = 0;
+    p->handling_signal = 0;
+    p->pending_signals = 0;
+    p->signal_mask = 0;
+    for(int i = 0; i < SIGNAL_SIZE; i++) {
+        p->signal_handlers_masks[i] = 0;
+        p->signal_handlers[i] = (void *)SIG_DFL;
+    }
+    p->signal_mask_backup = 0;
+    p->stopped = 0;
+    p->state = PUNUSED;
 }
 
 // Create a user page table for a given process,
@@ -1179,12 +1190,6 @@ void stop_handler()
     struct proc *p = myproc();
     p->stopped = 1;
     p->signal_handlers[SIGCONT] = (void *)SIG_DFL;
-    release(&p->lock);
-    while (p->stopped && !should_continue() && !got_killing_signal())
-    {
-        yield();
-    }
-    acquire(&p->lock);
 }
 
 // ADDED: cont signal handler
@@ -1205,7 +1210,6 @@ void handle_kernel_signals()
     {
         if (pending & (1 << signal))
         {
-
             void *handler = p->signal_handlers[signal];
             if ((handler == (void *)SIG_DFL && signal == SIGSTOP) || handler == (void *)SIGSTOP)
             {
@@ -1264,6 +1268,15 @@ void handle_user_signals()
     release(&p->lock);
 }
 
+void stop()
+{
+    struct proc *p = myproc();
+    while (p->stopped && !should_continue() && !got_killing_signal())
+    {
+        yield();
+    }
+}
+
 int kthread_id() { return mythread()->tid; }
 
 /**
@@ -1316,7 +1329,8 @@ void bsem_down(int descriptor)
     while (bs->value == BSACQUIRED)
     {
         sleep(bs, &bs->value_lock);
-        if(mythread()->killed || myproc()->killed || bs->state == BSUNUSED) {
+        if (mythread()->killed || myproc()->killed || bs->state == BSUNUSED)
+        {
             release(&bs->value_lock);
             return;
         }

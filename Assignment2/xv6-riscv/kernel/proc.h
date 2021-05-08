@@ -125,21 +125,6 @@ struct thread
     struct trapframe *trapframe; // data page for trampoline.S
     struct context context;      // swtch() here to run thread
     int xstate;
-
-    // uint pending_signals;
-    // uint signal_mask;
-    // uint signal_handlers_masks[SIGNAL_SIZE];
-    // void *signal_handlers[SIGNAL_SIZE];
-    // struct trapframe *trapframe_backup;
-    // uint signal_mask_backup;
-    // uint handling_signal;
-    // int stopped;
-
-    // uint64 sz;                   // Size of process memory (bytes)
-    // pagetable_t pagetable;       // User page table
-    // struct file *ofile[NOFILE];  // Open files
-    // struct inode *cwd;           // Current directory
-    // char name[16];               // Process name (debugging)
 };
 
 
@@ -175,10 +160,6 @@ struct proc
     struct inode *cwd;          // Current directory
     char name[16];              // Process name (debugging)
     struct proc *parent;        // Parent process
-
-    // uint64 kstack;               // Virtual address of kernel stack
-    // struct trapframe *trapframe; // data page for trampoline.S
-    // struct context context;      // swtch() here to run process
 };
 
 
