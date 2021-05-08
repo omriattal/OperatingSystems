@@ -299,9 +299,10 @@ int kthread_create(uint64 start_func, uint64 stack)
 }
 
 // ADDED: finding replacement as a mainthread
-struct thread *find_replacement(struct proc *p)
+struct thread *find_replacement()
 {
-    for (struct thread *t = p->threads; t < &proc->threads[NTHREADS]; t++)
+    struct proc *p = myproc();
+    for (struct thread *t = p->threads; t < &p->threads[NTHREADS]; t++)
     {
         if (t != p->main_thread)
         {
@@ -325,7 +326,7 @@ void kthread_exit(int status)
     struct proc *p = myproc();
     acquire(&p->lock);
     acquire(&t->lock);
-    if (t == p->main_thread && (p->main_thread = find_replacement(p)) == 0)
+    if (t == p->main_thread && (p->main_thread = find_replacement()) == 0)
     {
         p->main_thread = p->threads;
         p->state = PZOMBIE;
@@ -614,7 +615,7 @@ void exit(int status)
     else
     {
         release(&p->lock);
-        kthread_exit(-2);
+        kthread_exit(-1);
     }
     exit_all_other_threads();
     p->main_thread = t;
@@ -1302,6 +1303,7 @@ void bsem_free(int descriptor)
         release(&bsem_lock);
     }
 }
+
 void bsem_down(int descriptor)
 {
     struct bsem *bs = &bsem[descriptor];
@@ -1314,8 +1316,10 @@ void bsem_down(int descriptor)
     while (bs->value == BSACQUIRED)
     {
         sleep(bs, &bs->value_lock);
-        if(bs->state == BSUNUSED || mythread()->killed)
+        if(mythread()->killed || myproc()->killed || bs->state == BSUNUSED) {
+            release(&bs->value_lock);
             return;
+        }
     }
     bs->value = BSACQUIRED;
     release(&bs->value_lock);

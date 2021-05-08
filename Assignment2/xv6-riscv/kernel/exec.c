@@ -21,18 +21,10 @@ int exec(char *path, char **argv)
     pagetable_t pagetable = 0, oldpagetable;
     struct proc *p = myproc();
     struct thread *t = mythread();
-    exit_all_other_threads();
-    p->main_thread = t;
 
-    // ADDED: passing signal handling data to new proces
-    for (int i = 0; i < SIGNAL_SIZE; i++)
-    {
-        if (p->signal_handlers[i] != (void *)SIG_IGN)
-        {
-            p->signal_handlers[i]  = (void *)SIG_DFL;
-        }
-        p->signal_handlers_masks[i] = 0;
-    }
+    // ADDED: in case of kill returning failure
+    if(p->killed || t->killed)
+        return -1;
 
     begin_op();
 
@@ -112,6 +104,12 @@ int exec(char *path, char **argv)
         goto bad;
     if (copyout(pagetable, sp, (char *)ustack, (argc + 1) * sizeof(uint64)) < 0)
         goto bad;
+    
+    // ADDED exiting other threads before performing exec
+    if(p->killed || t->killed)
+        goto bad;
+    exit_all_other_threads();
+    p->main_thread = t;
 
     // arguments to user main(argc, argv)
     // argc is returned via the system call return
@@ -130,6 +128,17 @@ int exec(char *path, char **argv)
     p->sz = sz;
     t->trapframe->epc = elf.entry; // initial program counter = main
     t->trapframe->sp = sp;         // initial stack pointer
+    
+    // ADDED: passing signal handling data to new proces
+    for (int i = 0; i < SIGNAL_SIZE; i++)
+    {
+        if (p->signal_handlers[i] != (void *)SIG_IGN)
+        {
+            p->signal_handlers[i]  = (void *)SIG_DFL;
+        }
+        p->signal_handlers_masks[i] = 0;
+    }
+    
     proc_freepagetable(oldpagetable, oldsz);
 
     return argc; // this ends up in a0, the first argument to main(argc, argv)

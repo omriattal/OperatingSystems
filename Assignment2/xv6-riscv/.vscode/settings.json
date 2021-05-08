@@ -1,5 +1,8 @@
 {
     "cSpell.words": [
         "bsem"
-    ]
+    ],
+    "files.associations": {
+        "cstdarg": "c"
+    }
 }
