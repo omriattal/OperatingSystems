@@ -1314,6 +1314,8 @@ void bsem_down(int descriptor)
     while (bs->value == BSACQUIRED)
     {
         sleep(bs, &bs->value_lock);
+        if(bs->state == BSUNUSED || mythread()->killed)
+            return;
     }
     bs->value = BSACQUIRED;
     release(&bs->value_lock);
