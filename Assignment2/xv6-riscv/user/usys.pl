@@ -47,3 +47,7 @@ entry("bsem_alloc");
 entry("bsem_free");
 entry("bsem_down");
 entry("bsem_up");
+entry("csem_alloc");
+entry("csem_free");
+entry("csem_down");
+entry("csem_up");

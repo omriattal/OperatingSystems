@@ -6,6 +6,7 @@
 #include "proc.h"
 #include "defs.h"
 #include "bsem.h"
+#include "Csemaphore.h"
 
 struct cpu cpus[NCPU];
 
@@ -1351,4 +1352,44 @@ void bsem_up(int descriptor)
     bs->value = BSFREE;
     release(&bs->value_lock);
     wakeup(bs);
+}
+
+int csem_alloc(uint64 semaphore_addr, int initial_value) {
+    struct counting_semaphore counting_semaphore;
+    copyin(myproc()->pagetable,(char *)&counting_semaphore,semaphore_addr,sizeof(struct counting_semaphore));
+    counting_semaphore.bsem_descriptor1 = bsem_alloc();
+    counting_semaphore.bsem_descriptor2 = bsem_alloc();
+    if (counting_semaphore.bsem_descriptor1 < 0 || counting_semaphore.bsem_descriptor2 < 0) {
+        return -1;
+    }
+    if (initial_value == 0) bsem_down(counting_semaphore.bsem_descriptor2);
+    counting_semaphore.s = initial_value;
+    return 0;
+
+}
+void csem_free(uint64 semaphore_addr) {
+    struct counting_semaphore counting_semaphore;
+    copyin(myproc()->pagetable,(char *)&counting_semaphore,semaphore_addr,sizeof(struct counting_semaphore));
+    bsem_free(counting_semaphore.bsem_descriptor2);
+    bsem_free(counting_semaphore.bsem_descriptor1);
+    counting_semaphore.s = 0;
+
+}
+void csem_down(uint64 semaphore_addr) {
+    struct counting_semaphore csem;
+    copyin(myproc()->pagetable,(char *)&csem,semaphore_addr,sizeof(struct counting_semaphore));
+    bsem_down(csem.bsem_descriptor2);
+    bsem_down(csem.bsem_descriptor1);
+    csem.s--;
+    if (csem.s > 0) bsem_up(csem.bsem_descriptor2);
+    bsem_up(csem.bsem_descriptor1);
+
+}
+void csem_up(uint64 semaphore_addr) {
+    struct counting_semaphore csem;
+    copyin(myproc()->pagetable,(char *)&csem,semaphore_addr,sizeof(struct counting_semaphore));
+    bsem_down(csem.bsem_descriptor1);
+    csem.s++;
+    if (csem.s == 1) bsem_up(csem.bsem_descriptor2);
+    bsem_up(csem.bsem_descriptor1);
 }

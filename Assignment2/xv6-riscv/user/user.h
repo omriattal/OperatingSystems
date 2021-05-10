@@ -1,6 +1,7 @@
 struct stat;
 struct rtcdate;
 struct sigaction;
+struct counting_semaphore;
 // system calls
 int fork(void);
 int exit(int) __attribute__((noreturn));
@@ -35,6 +36,11 @@ int bsem_alloc();
 int bsem_free(int descriptor);
 int bsem_up(int descriptor);
 int bsem_down(int descriptor);
+int csem_alloc(struct counting_semaphore*, int);
+int csem_free(struct counting_semaphore*);
+int csem_up(struct counting_semaphore*);
+int csem_down(struct counting_semaphore*);
+
 
 // ulib.c
 int stat(const char*, struct stat*);
