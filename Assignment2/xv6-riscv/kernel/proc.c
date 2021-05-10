@@ -590,17 +590,17 @@ void exit_all_other_threads()
     struct thread *t = mythread();
     for (struct thread *t_iter = p->threads; t_iter < &p->threads[NTHREADS]; t_iter++)
     {
-        if (t_iter == t)
+        if (t_iter == t || t_iter->state == TUNUSED)
             continue;
         acquire(&t_iter->lock);
-        t_iter->killed = 1;
+            t_iter->killed = 1;
         if (t_iter->state == TSLEEPING)
             t_iter->state = TRUNNABLE;
         release(&t_iter->lock);
     }
     for (struct thread *t_iter = p->threads; t_iter < &p->threads[NTHREADS]; t_iter++)
     {
-        if (t_iter->tid == t->tid)
+        if (t_iter->tid == t->tid || t_iter->state == TUNUSED)
             continue;
         kthread_join(t_iter->tid, 0);
     }
