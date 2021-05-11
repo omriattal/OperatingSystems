@@ -2,7 +2,15 @@
 
 struct stat;
 struct rtcdate;
-struct perf;
+struct perf
+{
+	int ctime;			   // ADDED: creation time
+	int ttime;			   // ADDED: termination time
+	int stime;			   // ADDED: total time process spent in SLEEPING state
+	int retime;			   // ADDED: total time process spent in RUNNABLE state
+	int rutime;			   // ADDED: total time process spent in RUNNING state
+	int average_bursttime; // ADDED: approximate average burst time
+};
 
 // system calls
 int fork(void);
