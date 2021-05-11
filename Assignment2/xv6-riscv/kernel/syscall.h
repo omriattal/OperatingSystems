@@ -31,6 +31,10 @@
 #define SYS_bsem_free 30
 #define SYS_bsem_down 31
 #define SYS_bsem_up 32
+#define SYS_csem_alloc 33
+#define SYS_csem_free 34
+#define SYS_csem_down 35
+#define SYS_csem_up 36
 
 
 

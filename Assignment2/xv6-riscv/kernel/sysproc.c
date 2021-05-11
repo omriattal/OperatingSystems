@@ -209,3 +209,51 @@ sys_bsem_up(void)
     return 0;
 }
 
+uint64
+sys_csem_alloc(void)
+{
+    uint64 semaphore_addr;
+    int initial_value;
+    if (argaddr(0, &semaphore_addr) < 0 || argint(1,&initial_value) < 0)
+    {
+        return -1;
+    }
+    return csem_alloc(semaphore_addr,initial_value);
+}
+
+uint64
+sys_csem_free(void)
+{
+    uint64 semaphore_addr;
+    if (argaddr(0, &semaphore_addr) < 0)
+    {
+        return -1;
+    }
+    csem_free(semaphore_addr);
+    return 0;
+}
+
+uint64
+sys_csem_down(void)
+{
+    uint64 semaphore_addr;
+    if (argaddr(0, &semaphore_addr) < 0)
+    {
+        return -1;
+    }
+    csem_down(semaphore_addr);
+    return 0;
+}
+uint64
+sys_csem_up(void)
+{
+    uint64 semaphore_addr;
+    if (argaddr(0, &semaphore_addr) < 0)
+    {
+        return -1;
+    }
+    csem_up(semaphore_addr);
+    return 0;
+}
+
+

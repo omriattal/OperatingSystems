@@ -123,6 +123,10 @@ void bsem_free(int descriptor);
 void bsem_down(int descriptor);
 void bsem_up(int descriptor);
 
+int csem_alloc(uint64 semaphore_addr, int initial_value);
+void csem_free(uint64 semaphore_addr);
+void csem_down(uint64 semaphore_addr);
+void csem_up(uint64 semaphore_addr);
 // swtch.S
 void swtch(struct context *, struct context *);
 
