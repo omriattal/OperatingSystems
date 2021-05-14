@@ -11,7 +11,6 @@
 #include "kernel/spinlock.h" // NEW INCLUDE FOR ASS2
 #include "Csemaphore.h"   // NEW INCLUDE FOR ASS 2
 #include "kernel/proc.h" // NEW INCLUDE FOR ASS 2, has all the signal definitions and sigaction definition.  Alternatively, copy the relevant things into user.h and include only it, and then no need to include spinlock.h .
-
 //
 // Tests xv6 system calls.  usertests without arguments runs them all
 // and usertests <name> runs <name> test. The test runner creates for
@@ -23,7 +22,7 @@
 
 #define SIGKILL 9
 #define BUFSZ ((MAXOPBLOCKS + 2) * BSIZE)
-
+#define STACK_SIZE 4000
 char buf[BUFSZ];
 
 int wait_sig = 0;
@@ -119,10 +118,8 @@ void Csem_test(char *s){
     printf("3. Let the child wait on the semaphore...\n");
     sleep(10);
     csem_up(&csem);
-
     csem_free(&csem);
     wait(&pid);
-
     printf("Finished bsem test, make sure that the order of the prints is alright. Meaning (1...2...3...4)\n");
 }
 
