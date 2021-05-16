@@ -17,3 +17,5 @@
 #define MAX_TOTAL_PAGES 32
 #define SHELL_PID 2
 #define NO_FILE 0
+#define PAGEFAULT1 13
+#define PAGEFAULT2 15

@@ -98,8 +98,8 @@ int allocpid()
 
     return pid;
 }
-
-int initswap(struct proc *p)
+// ADDED: initialize the meta data
+int initmetadata(struct proc *p)
 {
     if (p->swapFile == NO_FILE && createSwapFile(p) < 0)
         return -1;
@@ -112,13 +112,17 @@ int initswap(struct proc *p)
         p->swap_pages[i].va = 0;
         p->swap_pages[i].state = PG_FREE;
     }
+    p->ram_pages[0].va = TRAMPOLINE;
+    p->ram_pages[0].state = PG_TAKEN;
+    p->ram_pages[1].va = TRAPFRAME;
+    p->ram_pages[1].state = PG_TAKEN;
     return 0;
 }
 
-void freeswap(struct proc *p)
+void freemetadata(struct proc *p)
 {
     if (removeSwapFile(p) < 0)
-        panic("freeswap: removing swap failed");
+        panic("freemetadata: removing swap failed");
     p->swapFile = NO_FILE;
 
     for (int i = 0; i < MAX_PSYC_PAGES; i++)
@@ -353,7 +357,7 @@ int fork(void)
     if (np->pid > SHELL_PID)
     {
         // ADDED: initializing ram and swap pages.
-        if (initswap(np) < 0)
+        if (initmetadata(np) < 0)
         {
             freeproc(np);
             release(&np->lock);
@@ -374,7 +378,7 @@ int fork(void)
         memmove(np->ram_pages, p->ram_pages, sizeof(p->ram_pages));
         memmove(np->swap_pages, p->swap_pages, sizeof(p->swap_pages));
     }
-    
+
     acquire(&wait_lock);
     np->parent = p;
     release(&wait_lock);
@@ -483,8 +487,8 @@ int wait(uint64 addr)
                     }
                     freeproc(np);
                     // ADDED: freeing the swap and metadata of np.
-                    if(np->pid > SHELL_PID)
-                        freeswap(np);
+                    if (np->pid > SHELL_PID)
+                        freemetadata(np);
                     release(&np->lock);
                     release(&wait_lock);
                     return pid;
@@ -765,7 +769,7 @@ struct ram_page *find_free_page_in_ram(struct proc *p)
 
 // ADDED: writing the page specified by pagenum to swapfile.
 // TODO: support statistics
-void swapout(struct proc *p, int pagenum)
+int swapout(struct proc *p, int pagenum)
 {
     if (pagenum < 0 || pagenum > MAX_PSYC_PAGES)
         panic("swapin: pagenum sucks");
@@ -797,7 +801,7 @@ void swapout(struct proc *p, int pagenum)
     rmpg->va = 0;
     *pte |= PTE_PG; // set the flag stating the page was swapped out
     *pte &= ~PTE_V; // clear the flag stating the page is valid
-    // TODO: consider refreshing the TLB
+    sfence_vma();   // refreshing the TLB
 }
 
 // ADDED: reading page specified by pagenum from swapfile.
@@ -838,15 +842,19 @@ void swapin(struct proc *p, int swap_targetidx, int ram_freeidx)
     *pte &= ~PTE_PG;                         // clear the flag stating the page was swapped out
     *pte |= PTE_V;                           // set the flag stating the page is valid
     *pte = PA2PTE(new_pa) | PTE_FLAGS(*pte); // insert the new allocated pa to the pte in the correct part
-    // TODO: consider refreshing the TLB
+    sfence_vma();                            // refreshing the TLB
 }
 // ADDED: adding ram page
 void add_ram_page(struct proc *p, uint64 va)
 {
+    if (p->pid <= SHELL_PID)
+        return;
     struct ram_page *rmpg;
-    if((rmpg = find_free_page_in_ram(p)) == 0){
+    if ((rmpg = find_free_page_in_ram(p)) == 0)
+    {
         // int to_swap = choose_page_to_swap(p);
         // swapout(p, to_swap);
+        // rmpg = &p->ram_pages[to_swap];
         panic("add_ram_page: not implemented yet");
     }
     rmpg->va = va;
@@ -855,16 +863,26 @@ void add_ram_page(struct proc *p, uint64 va)
 }
 
 // ADDED: removing rame page
-void remove_ram_page(struct proc *p,uint64 va) {
+void remove_ram_page(struct proc *p, uint64 va)
+{
+    if (p->pid <= SHELL_PID)
+        return;
+
     for (int i = 0; i < MAX_PSYC_PAGES; i++)
     {
-        if (p->ram_pages[i].va == va && p->ram_pages[i].state == PG_TAKEN) {
+        if (p->ram_pages[i].va == va && p->ram_pages[i].state == PG_TAKEN)
+        {
             p->ram_pages[i].va = 0;
             p->ram_pages[i].state = PG_FREE;
             p->ram_pages[i].age = 0;
-            return; 
+            return;
         }
     }
     panic("remove_ram_pag: did not find va");
-    
+}
+
+// ADDED: THE function of the assignment - handling pagefault!
+void handle_page_fault(uint64 va)
+{
+
 }

@@ -36,7 +36,7 @@ int exec(char *path, char **argv)
     // ADDED: initialize pages metadata
     if (p->pid > SHELL_PID)
     {
-        if (initswap(p) < 0)
+        if (initmetadata(p) < 0)
             goto bad;
     }
 

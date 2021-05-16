@@ -113,10 +113,10 @@ int either_copyout(int user_dst, uint64 dst, void *src, uint64 len);
 int either_copyin(void *dst, int user_src, uint64 src, uint64 len);
 void procdump(void);
 // ADDED: our functions for metadata
-int initswap(struct proc *p);
+int initmetadata(struct proc *p);
 void add_ram_page(struct proc *p, uint64 va);
 void remove_ram_page(struct proc *p, uint64 va);
-
+void handle_page_fault(uint64 va);
 
 // swtch.S
 void swtch(struct context *, struct context *);
@@ -188,7 +188,7 @@ int copyout(pagetable_t, uint64, char *, uint64);
 int copyin(pagetable_t, char *, uint64, uint64);
 int copyinstr(pagetable_t, char *, uint64, uint64);
 // ADDED: walk function used in proc.c
-pte_t * walk(pagetable_t, uint64, int);
+pte_t *walk(pagetable_t, uint64, int);
 
 // plic.c
 void plicinit(void);
