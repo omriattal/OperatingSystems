@@ -101,7 +101,7 @@ int allocpid()
 
 int initswap(struct proc *p)
 {
-    if (createSwapFile(p) < 0)
+    if (p->swapFile == NO_FILE && createSwapFile(p) < 0)
         return -1;
     for (int i = 0; i < MAX_PSYC_PAGES; i++)
     {
@@ -119,6 +119,7 @@ void freeswap(struct proc *p)
 {
     if (removeSwapFile(p) < 0)
         panic("freeswap: removing swap failed");
+    p->swapFile = NO_FILE;
 
     for (int i = 0; i < MAX_PSYC_PAGES; i++)
     {
@@ -362,13 +363,14 @@ int fork(void)
 
     if (p->pid > SHELL_PID)
     {
-        // ADDED: cpoying swap and metadata for ram and swap pages.
+        // ADDED: copying swap and metadata for ram and swap pages.
         if (copySwapFile(np, p) < 0)
         {
             freeproc(np);
             release(&np->lock);
             return -1;
         }
+        // ADDED: copy the ram and swap pages array from the parent process.
         memmove(np->ram_pages, p->ram_pages, sizeof(p->ram_pages));
         memmove(np->swap_pages, p->swap_pages, sizeof(p->swap_pages));
     }
@@ -749,6 +751,18 @@ struct swap_page *find_free_page_in_swap(struct proc *p)
     return 0;
 }
 
+struct ram_page *find_free_page_in_ram(struct proc *p)
+{
+    for (struct ram_page *rmpg = p->ram_pages; rmpg < &p->ram_pages[MAX_PSYC_PAGES]; rmpg++)
+    {
+        if (rmpg->state == PG_FREE)
+        {
+            return rmpg;
+        }
+    }
+    return 0;
+}
+
 // ADDED: writing the page specified by pagenum to swapfile.
 // TODO: support statistics
 void swapout(struct proc *p, int pagenum)
@@ -825,4 +839,32 @@ void swapin(struct proc *p, int swap_targetidx, int ram_freeidx)
     *pte |= PTE_V;                           // set the flag stating the page is valid
     *pte = PA2PTE(new_pa) | PTE_FLAGS(*pte); // insert the new allocated pa to the pte in the correct part
     // TODO: consider refreshing the TLB
+}
+// ADDED: adding ram page
+void add_ram_page(struct proc *p, uint64 va)
+{
+    struct ram_page *rmpg;
+    if((rmpg = find_free_page_in_ram(p)) == 0){
+        // int to_swap = choose_page_to_swap(p);
+        // swapout(p, to_swap);
+        panic("add_ram_page: not implemented yet");
+    }
+    rmpg->va = va;
+    rmpg->state = PG_TAKEN;
+    rmpg->age = 0;
+}
+
+// ADDED: removing rame page
+void remove_ram_page(struct proc *p,uint64 va) {
+    for (int i = 0; i < MAX_PSYC_PAGES; i++)
+    {
+        if (p->ram_pages[i].va == va && p->ram_pages[i].state == PG_TAKEN) {
+            p->ram_pages[i].va = 0;
+            p->ram_pages[i].state = PG_FREE;
+            p->ram_pages[i].age = 0;
+            return; 
+        }
+    }
+    panic("remove_ram_pag: did not find va");
+    
 }

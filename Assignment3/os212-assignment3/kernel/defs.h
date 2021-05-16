@@ -112,7 +112,10 @@ void yield(void);
 int either_copyout(int user_dst, uint64 dst, void *src, uint64 len);
 int either_copyin(void *dst, int user_src, uint64 src, uint64 len);
 void procdump(void);
-
+// ADDED: our functions for metadata
+int initswap(struct proc *p);
+void add_ram_page(struct proc *p, uint64 va);
+void remove_ram_page(struct proc *p, uint64 va);
 
 
 // swtch.S

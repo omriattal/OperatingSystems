@@ -139,9 +139,9 @@ struct proc
     char name[16];               // Process name (debugging)
 
     struct file *swapFile;
-   
+
     // int pages_in_memory;                         //number of pages in memory
-    // int swapfile_pages;                          //number of pages in swapfile
+    // int pages_in_swap;                           //number of pages in swap
     // uint swaps;                                  //swaps number
     // uint pagefaults;                             //pagefaults number
     // ADDED: page metadata
