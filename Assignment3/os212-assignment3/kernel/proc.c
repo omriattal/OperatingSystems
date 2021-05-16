@@ -769,7 +769,7 @@ struct ram_page *find_free_page_in_ram(struct proc *p)
 
 // ADDED: writing the page specified by pagenum to swapfile.
 // TODO: support statistics
-int swapout(struct proc *p, int pagenum)
+void swapout(struct proc *p, int pagenum)
 {
     if (pagenum < 0 || pagenum > MAX_PSYC_PAGES)
         panic("swapin: pagenum sucks");
@@ -779,10 +779,11 @@ int swapout(struct proc *p, int pagenum)
         panic("swapout: page free");
 
     pte_t *pte;
-    pte = walk(p->pagetable, rmpg->va, 0); // get the PTE of the chosen page
+    if ((pte = walk(p->pagetable, rmpg->va, 0)) == 0) // get the PTE of the chosen page
+        panic("swapout: unallocated pte");
 
     // page should be valid when we swap out, if not, panic
-    if (pte == 0)
+    if (!(*pte & PTE_V))
         panic("swapout: invalid page");
 
     struct swap_page *swpg = find_free_page_in_swap(p);
@@ -818,10 +819,11 @@ void swapin(struct proc *p, int swap_targetidx, int ram_freeidx)
         panic("swapin: page free");
 
     pte_t *pte;
-    pte = walk(p->pagetable, swpg->va, 0);
+    if ((pte = walk(p->pagetable, swpg->va, 0)) == 0)
+        panic("swapin: unallocated pte");
 
     // page should be valid when we swap out, if not, panic
-    if (pte != 0)
+    if (*pte & PTE_V || !(*pte & PTE_PG))
         panic("swapin: valid page");
 
     struct ram_page *rmpg = &p->ram_pages[ram_freeidx];
@@ -844,6 +846,7 @@ void swapin(struct proc *p, int swap_targetidx, int ram_freeidx)
     *pte = PA2PTE(new_pa) | PTE_FLAGS(*pte); // insert the new allocated pa to the pte in the correct part
     sfence_vma();                            // refreshing the TLB
 }
+
 // ADDED: adding ram page
 void add_ram_page(struct proc *p, uint64 va)
 {
@@ -884,5 +887,4 @@ void remove_ram_page(struct proc *p, uint64 va)
 // ADDED: THE function of the assignment - handling pagefault!
 void handle_page_fault(uint64 va)
 {
-
 }
