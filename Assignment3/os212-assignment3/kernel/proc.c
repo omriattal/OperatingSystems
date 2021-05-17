@@ -743,28 +743,40 @@ void procdump(void)
     }
 }
 
-struct swap_page *find_free_page_in_swap(struct proc *p)
+int find_page_in_swap(struct proc *p, int va)
 {
-    for (struct swap_page *swpg = p->swap_pages; swpg < &p->swap_pages[MAX_PSYC_PAGES]; swpg++)
+    for (int i = 0; i < MAX_PSYC_PAGES; i++)
     {
-        if (swpg->state == PG_FREE)
+        if (&p->swap_pages[i].va == va)
         {
-            return swpg;
+            return i;
         }
     }
-    return 0;
+    return -1;
 }
 
-struct ram_page *find_free_page_in_ram(struct proc *p)
+int find_free_page_in_swap(struct proc *p)
 {
-    for (struct ram_page *rmpg = p->ram_pages; rmpg < &p->ram_pages[MAX_PSYC_PAGES]; rmpg++)
+    for (int i = 0; i < MAX_PSYC_PAGES; i++)
     {
-        if (rmpg->state == PG_FREE)
+        if (&p->swap_pages[i].state == PG_FREE)
         {
-            return rmpg;
+            return i;
         }
     }
-    return 0;
+    return -1;
+}
+
+int find_free_page_in_ram(struct proc *p)
+{
+    for (int i = 0; i < MAX_PSYC_PAGES; i++)
+    {
+        if (&p->ram_pages[i].state == PG_FREE)
+        {
+            return i;
+        }
+    }
+    return -1;
 }
 
 // ADDED: writing the page specified by pagenum to swapfile.
@@ -778,18 +790,19 @@ void swapout(struct proc *p, int pagenum)
     if (rmpg->state == PG_FREE)
         panic("swapout: page free");
 
-    pte_t *pte;
-    if ((pte = walk(p->pagetable, rmpg->va, 0)) == 0) // get the PTE of the chosen page
+    pte_t *pte = walk(p->pagetable, rmpg->va, 0); // get the PTE of the chosen page
+    if (pte == 0)
         panic("swapout: unallocated pte");
 
     // page should be valid when we swap out, if not, panic
     if (!(*pte & PTE_V))
         panic("swapout: invalid page");
 
-    struct swap_page *swpg = find_free_page_in_swap(p);
-    if (!swpg)
+    struct swap_page *swpg;
+    int free_swp_idx;
+    if ((free_swp_idx = find_free_page_in_swap(p)) < 0)
         panic("swapout: swap full");
-
+    swpg = &p->swap_pages[free_swp_idx];
     char buffer[PGSIZE];
     memmove(buffer, (void *)rmpg->va, PGSIZE); // ? Check va as opposed to pa.
     if (writeToSwapFile(p, buffer, swpg->swap_location, PGSIZE) < 0)
@@ -818,8 +831,8 @@ void swapin(struct proc *p, int swap_targetidx, int ram_freeidx)
     if (swpg->state == PG_FREE)
         panic("swapin: page free");
 
-    pte_t *pte;
-    if ((pte = walk(p->pagetable, swpg->va, 0)) == 0)
+    pte_t *pte = walk(p->pagetable, swpg->va, 0);
+    if (pte == 0)
         panic("swapin: unallocated pte");
 
     // page should be valid when we swap out, if not, panic
@@ -847,19 +860,36 @@ void swapin(struct proc *p, int swap_targetidx, int ram_freeidx)
     sfence_vma();                            // refreshing the TLB
 }
 
+int choose_some_page(struct proc *p)
+{
+    for (int i = 0; i < MAX_PSYC_PAGES; i++)
+    {
+        if (p->ram_pages[i].state == PG_TAKEN)
+            return i;
+    }
+}
+
+int choose_page_to_swap(p)
+{
+#if SELECTION == SOME
+    return choose_some_page(p);
+#endif
+}
+
 // ADDED: adding ram page
 void add_ram_page(struct proc *p, uint64 va)
 {
     if (p->pid <= SHELL_PID)
         return;
     struct ram_page *rmpg;
-    if ((rmpg = find_free_page_in_ram(p)) == 0)
+    int free_ram_idx;
+    if ((free_ram_idx = find_free_page_in_ram(p)) < 0)
     {
-        // int to_swap = choose_page_to_swap(p);
-        // swapout(p, to_swap);
-        // rmpg = &p->ram_pages[to_swap];
-        panic("add_ram_page: not implemented yet");
+        int to_swap = choose_page_to_swap(p);
+        swapout(p, to_swap);
+        free_ram_idx = to_swap;
     }
+    rmpg = &p->ram_pages[free_ram_idx];
     rmpg->va = va;
     rmpg->state = PG_TAKEN;
     rmpg->age = 0;
@@ -887,4 +917,26 @@ void remove_ram_page(struct proc *p, uint64 va)
 // ADDED: THE function of the assignment - handling pagefault!
 void handle_page_fault(uint64 va)
 {
+    struct proc *p = myproc();
+    
+    pte_t *pte = walk(p->pagetable, va, 0);
+    if (pte == 0) //! should not happen
+        panic("page fault: unallocated virtual address");
+    
+    if(*pte & PTE_V) //! should not happen
+        panic("page fault: valid page");
+    
+    if(!(*pte & PTE_PG)) //! probably will happen
+        panic("segmentation fault");
+    
+    int free_ram_idx = find_free_page_in_ram(p);
+    if (free_ram_idx < 0) { // there is no available space in the ram   
+        int to_swap = choose_page_to_swap(p);
+        swapout(p,to_swap); // written the page with to_swap index to the file.
+        free_ram_idx = to_swap;
+    }
+    int target_idx = find_page_in_swap(p, va);
+    if(target_idx < 0) //! should not happen
+        panic("page fault: expected page in swap");
+    swapin(p, target_idx,free_ram_idx);
 }
