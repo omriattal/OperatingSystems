@@ -64,7 +64,7 @@ void usertrap(void)
 
         syscall();
     }
-    else if (r_scause() == PAGEFAULT1 || r_scause() == PAGEFAULT2) // ADDED: handling pagefault
+    else if (p->pid > SHELL_PID && (r_scause() == 12 || r_scause() == LOADFAULT || r_scause() == STOREFAULT)) // ADDED: handling pagefault
     {
         uint64 va = r_stval();
         handle_page_fault(va);

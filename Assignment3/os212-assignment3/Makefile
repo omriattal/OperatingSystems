@@ -52,7 +52,7 @@ QEMU = qemu-system-riscv64
 
 # ADDED: selection MACRO support
 ifndef SELECTION
-SELECTION = NONE # TODO: change to SCFIFO
+SELECTION = SOME # TODO: change to SCFIFO
 endif
 
 
@@ -140,6 +140,7 @@ UPROGS=\
 	$U/_wc\
 	$U/_zombie\
 	$U/_lazytests\
+	$U/_test\
 
 fs.img: mkfs/mkfs README $(UPROGS)
 	mkfs/mkfs fs.img README $(UPROGS)
