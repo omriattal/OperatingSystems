@@ -34,7 +34,7 @@ int exec(char *path, char **argv)
     ilock(ip);
 
     // ADDED: initialize pages metadata
-    if (p->pid > SHELL_PID)
+    if (isSwapProc(p))
     {
         if (initmetadata(p) < 0)
             goto bad;
@@ -85,7 +85,6 @@ int exec(char *path, char **argv)
     uvmclear(pagetable, sz - 2 * PGSIZE);
     sp = sz;
     stackbase = sp - PGSIZE;
-    printf("stackbase va %p\n", stackbase);
 
     // Push argument strings, prepare rest of stack in ustack.
     for (argc = 0; argv[argc]; argc++)

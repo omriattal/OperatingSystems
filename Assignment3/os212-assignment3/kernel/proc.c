@@ -353,7 +353,7 @@ int fork(void)
     pid = np->pid;
     release(&np->lock);
 
-    if (np->pid > SHELL_PID)
+    if (isSwapProc(p))
     {
         // ADDED: initializing ram and swap pages.
         if (initmetadata(np) < 0)
@@ -364,7 +364,7 @@ int fork(void)
         }
     }
 
-    if (p->pid > SHELL_PID)
+    if (isSwapProc(p))
     {
         // ADDED: copying swap and metadata for ram and swap pages.
         if (copySwapFile(np, p) < 0)
@@ -377,7 +377,6 @@ int fork(void)
         memmove(np->ram_pages, p->ram_pages, sizeof(p->ram_pages));
         memmove(np->swap_pages, p->swap_pages, sizeof(p->swap_pages));
     }
-
     acquire(&wait_lock);
     np->parent = p;
     release(&wait_lock);
@@ -425,7 +424,7 @@ void exit(int status)
         }
     }
     // ADDED: deleting the metadata of the process
-    if (p->pid > SHELL_PID)
+    if (isSwapProc(p))
         freemetadata(p);
 
     begin_op();
@@ -935,4 +934,10 @@ void handle_page_fault(uint64 va)
     if(target_idx < 0) //! should not happen
         panic("page fault: expected page in swap");
     swapin(p, target_idx,free_ram_idx);
+}
+
+// ADDED: check if a process is participating in the swap architecture
+inline int isSwapProc(struct proc *p){
+    printf("here\n");
+    return (strncmp(p->name, "sh", sizeof(p->name)) != 0) && (strncmp(p->name, "init", sizeof(p->name)) != 0);
 }
