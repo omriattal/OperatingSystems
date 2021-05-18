@@ -6,7 +6,6 @@
 #include "proc.h"
 #include "defs.h"
 
-char buffer[PGSIZE];
 struct cpu cpus[NCPU];
 
 struct proc proc[NPROC];
@@ -803,8 +802,7 @@ void swapout(struct proc *p, int pagenum)
         panic("swapout: swap full");
     swpg = &p->swap_pages[free_swp_idx];
     uint64 pa = PTE2PA(*pte);
-    memmove(buffer, (void *)pa, PGSIZE); // ? Check va as opposed to pa.
-    if (writeToSwapFile(p, buffer, swpg->swap_location, PGSIZE) < 0)
+    if (writeToSwapFile(p, (char *)pa, swpg->swap_location, PGSIZE) < 0)
         panic("swapout: unsuccessful write to file");
     swpg->state = PG_TAKEN;
     swpg->va = rmpg->va;
@@ -842,10 +840,8 @@ void swapin(struct proc *p, int swap_targetidx, int ram_freeidx)
         panic("swapin: ram page taken");
 
     uint64 new_pa = (uint64)kalloc(); //Allocating a new physical address for the swapped in page.
-    if (readFromSwapFile(p, buffer, swpg->swap_location, PGSIZE) < 0)
+    if (readFromSwapFile(p, (char *)new_pa, swpg->swap_location, PGSIZE) < 0)
         panic("swapin: read from swap failed");
-
-    memmove((void *)new_pa, buffer, PGSIZE); // inserting the original pageframe in buffer to the new pa
 
     rmpg->state = PG_TAKEN;
     rmpg->va = swpg->va;
