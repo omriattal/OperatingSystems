@@ -492,7 +492,7 @@ int readi(struct inode *ip, int user_dst, uint64 dst, uint off, uint n)
 // If user_src==1, then src is a user virtual address;
 // otherwise, src is a kernel address.
 // Returns the number of bytes successfully written.
-// If the return value is less than the requested n,
+// If the return value is less than the requested n,S
 // there was an error of some kind.
 int writei(struct inode *ip, int user_src, uint64 src, uint off, uint n)
 {
@@ -830,15 +830,15 @@ int copySwapFile(struct proc *dst, struct proc *src)
 {
     if (dst == 0 || src == 0 || dst->swapFile == 0 || src->swapFile == 0)
         return -1;
-    int max_file_size = PGSIZE * MAX_SWAP_PAGES;
+   
     char *buffer = (char *)kalloc();
     for (struct swap_page *swpg = src->swap_pages; swpg < &src->swap_pages[MAX_SWAP_PAGES]; swpg++)
     {
         if(swpg->state == PG_FREE)
             continue;
-        if (readFromSwapFile(src, buffer, swpg->swap_location, max_file_size) < 0)
+        if (readFromSwapFile(src, buffer, swpg->swap_location, PGSIZE) < 0)
             return -1;
-        if (writeToSwapFile(dst, buffer, swpg->swap_location, max_file_size) < 0)
+        if (writeToSwapFile(dst, buffer, swpg->swap_location, PGSIZE) < 0)
             return -1;
     }
     kfree(buffer);

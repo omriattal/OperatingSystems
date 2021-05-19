@@ -363,6 +363,21 @@ int fork(void)
             release(&np->lock);
             return -1;
         }
+        if (!isSwapProc(p))
+        {
+            int max_swap_file_size = PGSIZE * MAX_SWAP_PAGES;
+            char *mem = kalloc();
+            for (int location = 0; location < max_swap_file_size; location += PGSIZE)
+            {
+                if (writeToSwapFile(np, mem, location, PGSIZE) < 0)
+                {
+                    freeproc(np);
+                    release(&np->lock);
+                    return -1;
+                }
+            }
+            kfree(mem);
+        }
     }
 
     if (isSwapProc(p))
@@ -588,7 +603,6 @@ void forkret(void)
 
     // Still holding p->lock from scheduler.
     release(&myproc()->lock);
-
     if (first)
     {
         // File system initialization must be run in the context of a
@@ -597,7 +611,6 @@ void forkret(void)
         first = 0;
         fsinit(ROOTDEV);
     }
-
     usertrapret();
 }
 
@@ -800,6 +813,7 @@ void swapout(struct proc *p, int pagenum)
     if (free_swp_idx < 0)
         panic("swapout: swap full");
     swpg = &p->swap_pages[free_swp_idx];
+
     if (!(*pte & PTE_LZ))
     {
         uint64 pa = PTE2PA(*pte);
@@ -807,6 +821,7 @@ void swapout(struct proc *p, int pagenum)
             panic("swapout: unsuccessful write to file");
         kfree((void *)pa);
     }
+
     swpg->state = PG_TAKEN;
     swpg->va = rmpg->va;
     rmpg->state = PG_FREE;
@@ -846,6 +861,7 @@ void swapin(struct proc *p, int swap_targetidx, int ram_freeidx)
         if (readFromSwapFile(p, (char *)new_pa, swpg->swap_location, PGSIZE) < 0)
             panic("swapin: read from swap failed");
         *pte = PA2PTE(new_pa) | PTE_FLAGS(*pte); // insert the new allocated pa to the pte in the correct part
+        *pte |= PTE_V;                           // set the flag stating the page is valid
     }
 
     rmpg->state = PG_TAKEN;
@@ -853,13 +869,12 @@ void swapin(struct proc *p, int swap_targetidx, int ram_freeidx)
     swpg->state = PG_FREE;
     swpg->va = 0;
     *pte &= ~PTE_PG; // clear the flag stating the page was swapped out
-    *pte |= PTE_V;   // set the flag stating the page is valid
     sfence_vma();    // refreshing the TLB
 }
 
 int choose_some_page(struct proc *p)
 {
-    return 7;
+    return 3;
 }
 
 int choose_page_to_swap(struct proc *p)
@@ -875,6 +890,7 @@ void add_ram_page(struct proc *p, uint64 va)
 {
     if (!isSwapProc(p))
         return;
+
     struct ram_page *rmpg;
     int free_ram_idx;
     if ((free_ram_idx = find_free_page_in_ram(p)) < 0)
@@ -924,18 +940,18 @@ void handle_page_fault(uint64 va)
 
     if (!(*pte & PTE_PG) && !(*pte & PTE_LZ)) //! probably will happen
         panic("segmentation fault");
-    else if (*pte & PTE_LZ)
+    else if ((*pte & PTE_LZ) && !(*pte & PTE_PG))
     {
-        printf("process %s\n", p->name);
         // allocate physical address for a lazy allocation
         char *mem = kalloc();
         if (mem == 0)
             panic("page fault: failed to resolve lazy allocation");
-
         memset(mem, 0, PGSIZE);
+        
         *pte |= PTE_V;
         *pte &= ~PTE_LZ;
         *pte = PA2PTE(mem) | PTE_FLAGS(*pte);
+        sfence_vma();    // refreshing the TLB
     }
     else
     {
