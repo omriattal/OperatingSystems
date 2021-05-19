@@ -64,11 +64,13 @@ void usertrap(void)
 
         syscall();
     }
+    #ifndef NONE
     else if (isSwapProc(p) && (r_scause() == 12 || r_scause() == LOADFAULT || r_scause() == STOREFAULT)) // ADDED: handling pagefault
     {
         uint64 va = r_stval();
         handle_page_fault(va);
     }
+    #endif
     else if ((which_dev = devintr()) != 0)
     {
         // ok

@@ -52,7 +52,7 @@ QEMU = qemu-system-riscv64
 
 # ADDED: selection MACRO support
 ifndef SELECTION
-SELECTION = SOME # TODO: change to SCFIFO
+	SELECTION:=SCFIFO # TODO: change to SCFIFO
 endif
 
 
@@ -68,7 +68,7 @@ CFLAGS += -mcmodel=medany
 CFLAGS += -ffreestanding -fno-common -nostdlib -mno-relax
 CFLAGS += -I.
 CFLAGS += $(shell $(CC) -fno-stack-protector -E -x c /dev/null >/dev/null 2>&1 && echo -fno-stack-protector)
-CFLAGS += -D $(SELECTION) # ADDED: selection macro support
+CFLAGS += -D SELECTION=$(SELECTION) # ADDED: selection macro support
 
 # Disable PIE when possible (for Ubuntu 16.10 toolchain)
 ifneq ($(shell $(CC) -dumpspecs 2>/dev/null | grep -e '[^f]no-pie'),)
