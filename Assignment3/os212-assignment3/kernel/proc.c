@@ -112,8 +112,6 @@ int initmetadata(struct proc *p)
         p->swap_pages[i].va = 0;
         p->swap_pages[i].state = PG_FREE;
     }
-    // p->ram_pages[1].va = TRAPFRAME;
-    // p->ram_pages[1].state = PG_TAKEN;
     return 0;
 }
 
@@ -875,8 +873,9 @@ int choose_page_to_swap(struct proc *p)
 // ADDED: adding ram page
 void add_ram_page(struct proc *p, uint64 va)
 {
-    if (isSwapProc(p))
+    if (!isSwapProc(p)){
         return;
+    }
     struct ram_page *rmpg;
     int free_ram_idx;
     if ((free_ram_idx = find_free_page_in_ram(p)) < 0)
@@ -894,7 +893,7 @@ void add_ram_page(struct proc *p, uint64 va)
 // ADDED: removing ram page
 void remove_ram_page(struct proc *p, uint64 va)
 {
-    if (isSwapProc(p))
+    if (!isSwapProc(p))
         return;
 
     for (int i = 0; i < MAX_PSYC_PAGES; i++)
