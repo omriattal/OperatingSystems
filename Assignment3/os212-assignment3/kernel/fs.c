@@ -807,7 +807,7 @@ int createSwapFile(struct proc *p)
     p->swapFile->readable = O_WRONLY;
     p->swapFile->writable = O_RDWR;
     end_op();
-    
+
     return 0;
 }
 
@@ -828,13 +828,19 @@ int readFromSwapFile(struct proc *p, char *buffer, uint placeOnFile, uint size)
 // ADDED: copy swap files, used in fork.
 int copySwapFile(struct proc *dst, struct proc *src)
 {
-    if(dst == 0 || src == 0 || dst->swapFile == 0 || src->swapFile == 0)
+    if (dst == 0 || src == 0 || dst->swapFile == 0 || src->swapFile == 0)
         return -1;
-    int max_file_size = PGSIZE * MAX_PSYC_PAGES;
-    char buffer[max_file_size];
-    if(readFromSwapFile(src, buffer, 0, max_file_size) < 0)
-        return -1;
-    if(writeToSwapFile(dst, buffer, 0, max_file_size) < 0)
-        return -1;
+    int max_file_size = PGSIZE * MAX_SWAP_PAGES;
+    char *buffer = (char *)kalloc();
+    for (struct swap_page *swpg = src->swap_pages; swpg < &src->swap_pages[MAX_SWAP_PAGES]; swpg++)
+    {
+        if(swpg->state == PG_FREE)
+            continue;
+        if (readFromSwapFile(src, buffer, swpg->swap_location, max_file_size) < 0)
+            return -1;
+        if (writeToSwapFile(dst, buffer, swpg->swap_location, max_file_size) < 0)
+            return -1;
+    }
+    kfree(buffer);
     return 0;
 }

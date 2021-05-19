@@ -14,6 +14,7 @@
 
 // ADDED: page constants
 #define MAX_PSYC_PAGES 16
+#define MAX_SWAP_PAGES 16
 #define MAX_TOTAL_PAGES 32
 #define SHELL_PID 2 // TODO: consider deleting this define
 #define NO_FILE 0
