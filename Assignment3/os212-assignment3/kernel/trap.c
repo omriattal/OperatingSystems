@@ -172,6 +172,9 @@ void clockintr()
     acquire(&tickslock);
     ticks++;
     wakeup(&ticks);
+    #if SELECTION == NFUA || SELECTION == LAPA
+        update_ages();
+    #endif
     release(&tickslock);
 }
 

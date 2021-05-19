@@ -6,9 +6,7 @@
 #include "proc.h"
 #include "defs.h"
 
-#define NONE 0
-#define SOME 1
-#define SCFIFO 2
+
 struct cpu cpus[NCPU];
 
 struct proc proc[NPROC];
@@ -858,11 +856,6 @@ void swapin(struct proc *p, int swap_targetidx, int ram_freeidx)
     *pte = PA2PTE(new_pa) | PTE_FLAGS(*pte); // insert the new allocated pa to the pte in the correct part
     sfence_vma();                            // refreshing the TLB
 }
-// ADDED: the most complex function of all time per code lines
-int choose_some_page(struct proc *p)
-{
-    return 1;
-}
 // ADDED: the main function of handling page fault
 int choose_scfifo_page(struct proc *p)
 {
@@ -882,10 +875,22 @@ int choose_scfifo_page(struct proc *p)
     }
     panic("choose scfifo page: not supposed to happen");
 }
+// ADDED: the most complex function of all time per code lines
+int choose_nfua_page(struct proc *p)
+{
+}
+// ADDED: the most complex function of all time per code lines
+int choose_some_page(struct proc *p)
+{
+    return 1;
+}
 int choose_page_to_swap(struct proc *p)
 {
 #if SELECTION == SCFIFO
     return choose_scfifo_page(p);
+#endif
+#if SELECTION == NFUA
+    return choose_nfua_page(p);
 #endif
 #if SELECTION == SOME
     return choose_some_page(p);
@@ -903,7 +908,7 @@ void add_ram_page(struct proc *p, uint64 va)
     if ((free_ram_idx = find_free_page_in_ram(p)) < 0)
     {
         int to_swap = choose_page_to_swap(p);
-        printf("while adding, swapped page %d\n", to_swap); // TODO: 
+        printf("while adding, swapped page %d\n", to_swap); // TODO: delete after checking all algorithms
         swapout(p, to_swap);
         free_ram_idx = to_swap;
     }
@@ -952,8 +957,8 @@ void handle_page_fault(uint64 va)
     if (free_ram_idx < 0)
     { // there is no available space in the ram
         int to_swap = choose_page_to_swap(p);
-        printf("Chose to swap ram page number %d\n", to_swap);
-        swapout(p, to_swap); // written the page with to_swap index to the file.
+        printf("Chose to swap ram page number %d\n", to_swap); // TODO: delete after checking all algorithms
+        swapout(p, to_swap);                                   // written the page with to_swap index to the file.
         free_ram_idx = to_swap;
     }
     int target_idx = find_page_in_swap(p, PGROUNDDOWN(va));
@@ -966,4 +971,21 @@ void handle_page_fault(uint64 va)
 inline int isSwapProc(struct proc *p)
 {
     return (strncmp(p->name, "initcode", sizeof(p->name)) != 0) && (strncmp(p->name, "init", sizeof(p->name)) != 0) && (strncmp(p->parent->name, "init", sizeof(p->parent->name)) != 0);
+}
+
+void update_ages()
+{
+    for (struct proc *p = proc; p < &proc[NPROC]; p++)
+    {
+        for (struct ram_page *rmpg = p->ram_pages; rmpg < &p->ram_pages[MAX_PSYC_PAGES]; rmpg++)
+        {
+            pte_t *pte = walk(p->pagetable, rmpg->va, 0);
+            rmpg->age = rmpg->age >> 1; // shift right
+            if (*pte & PTE_A)
+            {
+                rmpg->age |= 1 << (sizeof(rmpg->age) - 1); // adding 1 to the MSB of age.
+                *pte &= ~PTE_A;
+            }
+        }
+    }
 }
