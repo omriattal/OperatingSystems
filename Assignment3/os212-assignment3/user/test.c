@@ -22,10 +22,10 @@ int main()
     if (pid == 0)
     {
         printf("child printing:\n");
-        // for (int i = 0; i < 20; i++)
-        // {
-        //     printf("    alloc[%d] = %c\n", i * PGSIZE, alloc[i * PGSIZE]);
-        // }
+        for (int i = 0; i < 20; i++)
+        {
+            printf("    alloc[%d] = %c\n", i * PGSIZE, alloc[i * PGSIZE]);
+        }
     }
     else if(pid > 0){
         wait(0);
