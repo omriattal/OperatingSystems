@@ -240,7 +240,7 @@ proc_pagetable(struct proc *p)
         uvmfree(pagetable, 0);
         return 0;
     }
-    
+
     return pagetable;
 }
 
@@ -794,20 +794,23 @@ void swapout(struct proc *p, int pagenum)
         panic("swapout: unallocated pte");
 
     // page should be valid when we swap out, if not, panic
-    if (!(*pte & PTE_V))
+    if (!(*pte & PTE_V) && !(*pte & PTE_LZ))
         panic("swapout: invalid page");
 
     struct swap_page *swpg;
-    int free_swp_idx =find_free_page_in_swap(p);
+    int free_swp_idx = find_free_page_in_swap(p);
     if (free_swp_idx < 0)
         panic("swapout: swap full");
     swpg = &p->swap_pages[free_swp_idx];
-    uint64 pa = PTE2PA(*pte);
-    if (writeToSwapFile(p, (char *)pa, swpg->swap_location, PGSIZE) < 0)
-        panic("swapout: unsuccessful write to file");
+    if (!(*pte & PTE_LZ))
+    {
+        uint64 pa = PTE2PA(*pte);
+        if (writeToSwapFile(p, (char *)pa, swpg->swap_location, PGSIZE) < 0)
+            panic("swapout: unsuccessful write to file");
+        kfree((void *)pa);
+    }
     swpg->state = PG_TAKEN;
     swpg->va = rmpg->va;
-    kfree((void *)pa);
     rmpg->state = PG_FREE;
     rmpg->va = 0;
     *pte |= PTE_PG; // set the flag stating the page was swapped out
@@ -832,17 +835,20 @@ void swapin(struct proc *p, int swap_targetidx, int ram_freeidx)
     if (pte == 0)
         panic("swapin: unallocated pte");
 
-    // page should be valid when we swap out, if not, panic
+    // page should be invalid and paged out when we swap in, if not, panic
     if (*pte & PTE_V || !(*pte & PTE_PG))
         panic("swapin: valid page");
 
     struct ram_page *rmpg = &p->ram_pages[ram_freeidx];
     if (rmpg->state == PG_TAKEN)
         panic("swapin: ram page taken");
-
-    uint64 new_pa = (uint64)kalloc(); //Allocating a new physical address for the swapped in page.
-    if (readFromSwapFile(p, (char *)new_pa, swpg->swap_location, PGSIZE) < 0)
-        panic("swapin: read from swap failed");
+    if (!(*pte & PTE_LZ))
+    {
+        uint64 new_pa = (uint64)kalloc(); //Allocating a new physical address for the swapped in page.
+        if (readFromSwapFile(p, (char *)new_pa, swpg->swap_location, PGSIZE) < 0)
+            panic("swapin: read from swap failed");
+        *pte = PA2PTE(new_pa) | PTE_FLAGS(*pte); // insert the new allocated pa to the pte in the correct part
+    }
 
     rmpg->state = PG_TAKEN;
     rmpg->va = swpg->va;
@@ -850,7 +856,6 @@ void swapin(struct proc *p, int swap_targetidx, int ram_freeidx)
     swpg->va = 0;
     *pte &= ~PTE_PG;                         // clear the flag stating the page was swapped out
     *pte |= PTE_V;                           // set the flag stating the page is valid
-    *pte = PA2PTE(new_pa) | PTE_FLAGS(*pte); // insert the new allocated pa to the pte in the correct part
     sfence_vma();                            // refreshing the TLB
 }
 
@@ -909,31 +914,47 @@ void remove_ram_page(struct proc *p, uint64 va)
 void handle_page_fault(uint64 va)
 {
     struct proc *p = myproc();
-    if(isSwapProc(p))
+    if (isSwapProc(p))
         return;
     pte_t *pte = walk(p->pagetable, va, 0);
     if (pte == 0) //! should not happen
         panic("page fault: unallocated virtual address");
-    
-    if(*pte & PTE_V) //! should not happen
+
+    if (*pte & PTE_V) //! should not happen
         panic("page fault: valid page");
-    
-    if(!(*pte & PTE_PG)) //! probably will happen
+
+    if (!(*pte & PTE_PG) && !(*pte & PTE_LZ)) //! probably will happen
         panic("segmentation fault");
-    
-    int free_ram_idx = find_free_page_in_ram(p);
-    if (free_ram_idx < 0) { // there is no available space in the ram   
-        int to_swap = choose_page_to_swap(p);
-        swapout(p,to_swap); // written the page with to_swap index to the file.
-        free_ram_idx = to_swap;
+    else if (*pte & PTE_LZ)
+    {
+        // allocate physical address for a lazy allocation
+        char *mem = kalloc();
+        if (mem == 0)
+            panic("page fault: failed to resolve lazy allocation");
+
+        memset(mem, 0, PGSIZE);
+        *pte |= PTE_V;
+        *pte &= ~PTE_LZ;
+        *pte = PA2PTE(mem) | PTE_FLAGS(*pte);
     }
-    int target_idx = find_page_in_swap(p, PGROUNDDOWN(va));
-    if(target_idx < 0) //! should not happen
-        panic("page fault: expected page in swap");
-    swapin(p, target_idx,free_ram_idx);
+    else
+    {
+        int free_ram_idx = find_free_page_in_ram(p);
+        if (free_ram_idx < 0)
+        { // there is no available space in the ram
+            int to_swap = choose_page_to_swap(p);
+            swapout(p, to_swap); // written the page with to_swap index to the file.
+            free_ram_idx = to_swap;
+        }
+        int target_idx = find_page_in_swap(p, PGROUNDDOWN(va));
+        if (target_idx < 0) //! should not happen
+            panic("page fault: expected page in swap");
+        swapin(p, target_idx, free_ram_idx);
+    }
 }
 
 // ADDED: check if a process is participating in the swap architecture
-inline int isSwapProc(struct proc *p){
+inline int isSwapProc(struct proc *p)
+{
     return (strncmp(p->name, "initcode", sizeof(p->name)) != 0) && (strncmp(p->name, "init", sizeof(p->name)) != 0) && (strncmp(p->parent->name, "init", sizeof(p->parent->name)) != 0);
 }
