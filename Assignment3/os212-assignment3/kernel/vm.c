@@ -148,7 +148,9 @@ int mappages(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm)
             return -1;
         if (*pte & PTE_V)
             panic("remap");
-        *pte = PA2PTE(pa) | perm | PTE_V;
+        *pte = PA2PTE(pa) | perm;
+        if (!(perm & PTE_PG))
+            *pte |= PTE_V;
         if (a == last)
             break;
         a += PGSIZE;
@@ -325,15 +327,20 @@ int uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
     {
         if ((pte = walk(old, i, 0)) == 0)
             panic("uvmcopy: pte should exist");
-        if(*pte & PTE_PG)
-            continue;
-        if ((*pte & PTE_V) == 0)
+        if ((*pte & PTE_V) == 0 && !(*pte & PTE_PG))
             panic("uvmcopy: page not present");
         pa = PTE2PA(*pte);
         flags = PTE_FLAGS(*pte);
-        if ((mem = kalloc()) == 0)
-            goto err;
-        memmove(mem, (char *)pa, PGSIZE);
+        if (flags & PTE_PG)
+        {
+            mem = 0;
+        }
+        else
+        {
+            if ((mem = kalloc()) == 0)
+                goto err;
+            memmove(mem, (char *)pa, PGSIZE);
+        }
         if (mappages(new, i, PGSIZE, (uint64)mem, flags) != 0)
         {
             kfree(mem);
