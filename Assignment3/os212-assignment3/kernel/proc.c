@@ -352,7 +352,11 @@ int fork(void)
     pid = np->pid;
     release(&np->lock);
 
-    if (isSwapProc(p))
+    acquire(&wait_lock);
+    np->parent = p;
+    release(&wait_lock);
+    
+    if (isSwapProc(np))
     {
         // ADDED: initializing ram and swap pages.
         if (initmetadata(np) < 0)
@@ -376,9 +380,6 @@ int fork(void)
         memmove(np->ram_pages, p->ram_pages, sizeof(p->ram_pages));
         memmove(np->swap_pages, p->swap_pages, sizeof(p->swap_pages));
     }
-    acquire(&wait_lock);
-    np->parent = p;
-    release(&wait_lock);
 
     acquire(&np->lock);
     np->state = RUNNABLE;
