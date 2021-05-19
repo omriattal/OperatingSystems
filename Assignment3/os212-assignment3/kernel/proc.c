@@ -353,7 +353,7 @@ int fork(void)
     acquire(&wait_lock);
     np->parent = p;
     release(&wait_lock);
-    
+
     if (isSwapProc(np))
     {
         // ADDED: initializing ram and swap pages.
@@ -407,7 +407,7 @@ void reparent(struct proc *p)
 void exit(int status)
 {
     struct proc *p = myproc();
-    
+
     if (p == initproc)
         panic("init exiting");
 
@@ -852,9 +852,9 @@ void swapin(struct proc *p, int swap_targetidx, int ram_freeidx)
     rmpg->va = swpg->va;
     swpg->state = PG_FREE;
     swpg->va = 0;
-    *pte &= ~PTE_PG;                         // clear the flag stating the page was swapped out
-    *pte |= PTE_V;                           // set the flag stating the page is valid
-    sfence_vma();                            // refreshing the TLB
+    *pte &= ~PTE_PG; // clear the flag stating the page was swapped out
+    *pte |= PTE_V;   // set the flag stating the page is valid
+    sfence_vma();    // refreshing the TLB
 }
 
 int choose_some_page(struct proc *p)
@@ -873,9 +873,8 @@ int choose_page_to_swap(struct proc *p)
 // ADDED: adding ram page
 void add_ram_page(struct proc *p, uint64 va)
 {
-    if (!isSwapProc(p)){
+    if (!isSwapProc(p))
         return;
-    }
     struct ram_page *rmpg;
     int free_ram_idx;
     if ((free_ram_idx = find_free_page_in_ram(p)) < 0)
@@ -913,9 +912,9 @@ void remove_ram_page(struct proc *p, uint64 va)
 void handle_page_fault(uint64 va)
 {
     struct proc *p = myproc();
-    // TODO: check why this is here
-    // if (!isSwapProc(p))
-    //     return;
+    if (!isSwapProc(p))
+        panic("page fault: none swap proc page fault");
+
     pte_t *pte = walk(p->pagetable, va, 0);
     if (pte == 0) //! should not happen
         panic("page fault: unallocated virtual address");
@@ -927,6 +926,7 @@ void handle_page_fault(uint64 va)
         panic("segmentation fault");
     else if (*pte & PTE_LZ)
     {
+        printf("process %s\n", p->name);
         // allocate physical address for a lazy allocation
         char *mem = kalloc();
         if (mem == 0)
@@ -957,4 +957,5 @@ void handle_page_fault(uint64 va)
 inline int isSwapProc(struct proc *p)
 {
     return (strncmp(p->name, "initcode", sizeof(p->name)) != 0) && (strncmp(p->name, "init", sizeof(p->name)) != 0) && (strncmp(p->parent->name, "init", sizeof(p->parent->name)) != 0);
+    // return p->pid > SHELL_PID;
 }
