@@ -61,7 +61,7 @@ int exec(char *path, char **argv)
         if (ph.vaddr + ph.memsz < ph.vaddr)
             goto bad;
         uint64 sz1;
-        if ((sz1 = uvmalloc(pagetable, sz, ph.vaddr + ph.memsz)) == 0)
+        if ((sz1 = uvmalloc(pagetable, sz, ph.vaddr + ph.memsz, 0)) == 0)
             goto bad;
         sz = sz1;
         if (ph.vaddr % PGSIZE != 0)
@@ -74,12 +74,11 @@ int exec(char *path, char **argv)
     ip = 0;
     p = myproc();
     uint64 oldsz = p->sz;
-
     // Allocate two pages at the next page boundary.
     // Use the second as the user stack.
     sz = PGROUNDUP(sz);
     uint64 sz1;
-    if ((sz1 = uvmalloc(pagetable, sz, sz + 2 * PGSIZE)) == 0)
+    if ((sz1 = uvmalloc(pagetable, sz, sz + 2 * PGSIZE, 0)) == 0)
         goto bad;
     sz = sz1;
     uvmclear(pagetable, sz - 2 * PGSIZE);
@@ -100,7 +99,6 @@ int exec(char *path, char **argv)
         ustack[argc] = sp;
     }
     ustack[argc] = 0;
-
     // push the array of argv[] pointers.
     sp -= (argc + 1) * sizeof(uint64);
     sp -= sp % 16;

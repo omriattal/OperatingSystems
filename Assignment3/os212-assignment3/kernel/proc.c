@@ -299,7 +299,7 @@ int growproc(int n)
     sz = p->sz;
     if (n > 0)
     {
-        if ((sz = uvmalloc(p->pagetable, sz, sz + n)) == 0)
+        if ((sz = uvmalloc(p->pagetable, sz, sz + n, 1)) == 0)
         {
             return -1;
         }
@@ -409,7 +409,7 @@ void reparent(struct proc *p)
 void exit(int status)
 {
     struct proc *p = myproc();
-
+    
     if (p == initproc)
         panic("init exiting");
 
@@ -861,7 +861,7 @@ void swapin(struct proc *p, int swap_targetidx, int ram_freeidx)
 
 int choose_some_page(struct proc *p)
 {
-    return 1;
+    return 7;
 }
 
 int choose_page_to_swap(struct proc *p)
@@ -914,8 +914,9 @@ void remove_ram_page(struct proc *p, uint64 va)
 void handle_page_fault(uint64 va)
 {
     struct proc *p = myproc();
-    if (isSwapProc(p))
-        return;
+    // TODO: check why this is here
+    // if (!isSwapProc(p))
+    //     return;
     pte_t *pte = walk(p->pagetable, va, 0);
     if (pte == 0) //! should not happen
         panic("page fault: unallocated virtual address");
