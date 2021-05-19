@@ -870,7 +870,7 @@ int choose_page_to_swap(struct proc *p)
 // ADDED: adding ram page
 void add_ram_page(struct proc *p, uint64 va)
 {
-    if (isSwapProc(p))
+    if (!isSwapProc(p))
         return;
     struct ram_page *rmpg;
     int free_ram_idx;
@@ -889,7 +889,7 @@ void add_ram_page(struct proc *p, uint64 va)
 // ADDED: removing ram page
 void remove_ram_page(struct proc *p, uint64 va)
 {
-    if (isSwapProc(p))
+    if (!isSwapProc(p))
         return;
 
     for (int i = 0; i < MAX_PSYC_PAGES; i++)
@@ -909,8 +909,8 @@ void remove_ram_page(struct proc *p, uint64 va)
 void handle_page_fault(uint64 va)
 {
     struct proc *p = myproc();
-    if(isSwapProc(p))
-        return;
+    if(!isSwapProc(p))
+        panic("page fault: none swap proc page fault");
     pte_t *pte = walk(p->pagetable, va, 0);
     if (pte == 0) //! should not happen
         panic("page fault: unallocated virtual address");
