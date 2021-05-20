@@ -6,6 +6,7 @@
 #include "proc.h"
 #include "defs.h"
 
+
 struct cpu cpus[NCPU];
 
 struct proc proc[NPROC];
@@ -159,7 +160,8 @@ allocproc(void)
 found:
     p->pid = allocpid();
     p->state = USED;
-
+    // ADDED: statistics, metadata
+    p->scfifo_out_index = 0;
     // Allocate a trapframe page.
     if ((p->trapframe = (struct trapframe *)kalloc()) == 0)
     {
@@ -207,6 +209,7 @@ freeproc(struct proc *p)
     p->killed = 0;
     p->xstate = 0;
     p->state = UNUSED;
+    p->scfifo_out_index = 0;
 }
 
 // Create a user page table for a given process,
@@ -240,7 +243,7 @@ proc_pagetable(struct proc *p)
         uvmfree(pagetable, 0);
         return 0;
     }
-    
+
     return pagetable;
 }
 
@@ -355,7 +358,7 @@ int fork(void)
     acquire(&wait_lock);
     np->parent = p;
     release(&wait_lock);
-    
+
     if (isSwapProc(np))
     {
         // ADDED: initializing ram and swap pages.
@@ -798,7 +801,7 @@ void swapout(struct proc *p, int pagenum)
         panic("swapout: invalid page");
 
     struct swap_page *swpg;
-    int free_swp_idx =find_free_page_in_swap(p);
+    int free_swp_idx = find_free_page_in_swap(p);
     if (free_swp_idx < 0)
         panic("swapout: swap full");
     swpg = &p->swap_pages[free_swp_idx];
@@ -853,15 +856,43 @@ void swapin(struct proc *p, int swap_targetidx, int ram_freeidx)
     *pte = PA2PTE(new_pa) | PTE_FLAGS(*pte); // insert the new allocated pa to the pte in the correct part
     sfence_vma();                            // refreshing the TLB
 }
-
+// ADDED: the main function of handling page fault
+int choose_scfifo_page(struct proc *p)
+{
+    for (; p->scfifo_out_index < MAX_PSYC_PAGES; p->scfifo_out_index = (p->scfifo_out_index + 1) % MAX_PSYC_PAGES)
+    {
+        pte_t *pte = walk(p->pagetable, p->ram_pages[p->scfifo_out_index].va, 0);
+        if (*pte & PTE_A)
+        {
+            *pte &= ~PTE_A;
+        }
+        else
+        {
+            int real_out_index = p->scfifo_out_index;
+            p->scfifo_out_index = (p->scfifo_out_index + 1) % MAX_PSYC_PAGES;
+            return real_out_index;
+        }
+    }
+    panic("choose scfifo page: not supposed to happen");
+}
+// ADDED: the most complex function of all time per code lines
+int choose_nfua_page(struct proc *p)
+{
+}
+// ADDED: the most complex function of all time per code lines
 int choose_some_page(struct proc *p)
 {
     return 1;
 }
-
 int choose_page_to_swap(struct proc *p)
 {
-#ifdef SOME
+#if SELECTION == SCFIFO
+    return choose_scfifo_page(p);
+#endif
+#if SELECTION == NFUA
+    return choose_nfua_page(p);
+#endif
+#if SELECTION == SOME
     return choose_some_page(p);
 #endif
     return -1;
@@ -877,6 +908,7 @@ void add_ram_page(struct proc *p, uint64 va)
     if ((free_ram_idx = find_free_page_in_ram(p)) < 0)
     {
         int to_swap = choose_page_to_swap(p);
+        printf("while adding, swapped page %d\n", to_swap); // TODO: delete after checking all algorithms
         swapout(p, to_swap);
         free_ram_idx = to_swap;
     }
@@ -909,31 +941,51 @@ void remove_ram_page(struct proc *p, uint64 va)
 void handle_page_fault(uint64 va)
 {
     struct proc *p = myproc();
-    if(!isSwapProc(p))
+    if (!isSwapProc(p))
         panic("page fault: none swap proc page fault");
     pte_t *pte = walk(p->pagetable, va, 0);
     if (pte == 0) //! should not happen
         panic("page fault: unallocated virtual address");
-    
-    if(*pte & PTE_V) //! should not happen
+
+    if (*pte & PTE_V) //! should not happen
         panic("page fault: valid page");
-    
-    if(!(*pte & PTE_PG)) //! probably will happen
+
+    if (!(*pte & PTE_PG)) //! probably will happen
         panic("segmentation fault");
-    
+
     int free_ram_idx = find_free_page_in_ram(p);
-    if (free_ram_idx < 0) { // there is no available space in the ram   
+    if (free_ram_idx < 0)
+    { // there is no available space in the ram
         int to_swap = choose_page_to_swap(p);
-        swapout(p,to_swap); // written the page with to_swap index to the file.
+        printf("Chose to swap ram page number %d\n", to_swap); // TODO: delete after checking all algorithms
+        swapout(p, to_swap);                                   // written the page with to_swap index to the file.
         free_ram_idx = to_swap;
     }
     int target_idx = find_page_in_swap(p, PGROUNDDOWN(va));
-    if(target_idx < 0) //! should not happen
+    if (target_idx < 0) //! should not happen
         panic("page fault: expected page in swap");
-    swapin(p, target_idx,free_ram_idx);
+    swapin(p, target_idx, free_ram_idx);
 }
 
 // ADDED: check if a process is participating in the swap architecture
-inline int isSwapProc(struct proc *p){
+inline int isSwapProc(struct proc *p)
+{
     return (strncmp(p->name, "initcode", sizeof(p->name)) != 0) && (strncmp(p->name, "init", sizeof(p->name)) != 0) && (strncmp(p->parent->name, "init", sizeof(p->parent->name)) != 0);
+}
+
+void update_ages()
+{
+    for (struct proc *p = proc; p < &proc[NPROC]; p++)
+    {
+        for (struct ram_page *rmpg = p->ram_pages; rmpg < &p->ram_pages[MAX_PSYC_PAGES]; rmpg++)
+        {
+            pte_t *pte = walk(p->pagetable, rmpg->va, 0);
+            rmpg->age = rmpg->age >> 1; // shift right
+            if (*pte & PTE_A)
+            {
+                rmpg->age |= 1 << (sizeof(rmpg->age) - 1); // adding 1 to the MSB of age.
+                *pte &= ~PTE_A;
+            }
+        }
+    }
 }

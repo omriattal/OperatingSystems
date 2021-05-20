@@ -20,3 +20,9 @@
 #define NO_FILE 0
 #define LOADFAULT 13
 #define STOREFAULT 15
+// ADDED: to make macro selection work.
+#define NONE 0
+#define SOME 1
+#define SCFIFO 2
+#define NFUA 3
+#define LAPA 4

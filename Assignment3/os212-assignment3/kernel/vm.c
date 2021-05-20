@@ -148,6 +148,8 @@ int mappages(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm)
             return -1;
         if (*pte & PTE_V)
             panic("remap");
+        
+        // ADDED: add valid to a page in memory only.
         *pte = PA2PTE(pa) | perm;
         if (!(perm & PTE_PG))
             *pte |= PTE_V;
@@ -331,6 +333,7 @@ int uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
             panic("uvmcopy: page not present");
         pa = PTE2PA(*pte);
         flags = PTE_FLAGS(*pte);
+        // ADDED: allocated physical memory to non PTE_PG page.
         if (flags & PTE_PG)
         {
             mem = 0;

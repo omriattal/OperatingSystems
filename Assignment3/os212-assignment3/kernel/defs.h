@@ -118,6 +118,7 @@ void add_ram_page(struct proc *p, uint64 va);
 void remove_ram_page(struct proc *p, uint64 va);
 void handle_page_fault(uint64 va);
 int isSwapProc(struct proc *p);
+void update_ages();
 
 // swtch.S
 void swtch(struct context *, struct context *);
