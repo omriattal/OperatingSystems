@@ -10,10 +10,18 @@ int main()
     char *alloc = malloc(20 * PGSIZE); // 21 actually -> 13 pages are inserted to ram pages, resulting in 8 pagefaults.
 
     printf("Allocated\n");
-    for (int i = 20; i >= 0; i--)
+    for (int i = 0; i < 40; i++)
     {
-        alloc[i * PGSIZE] = 'a' + i;
+        alloc[i * PGSIZE/2] = 'a'+i;
+        sleep(1);
         printf("%d\n", i);
+    }
+    for (int i = 0; i < 40; i++)
+    {
+        if (alloc[i * PGSIZE/2] == 'a'+i) {
+            printf("correct\n");
+        }
+        sleep(1);
     }
     // for (int i = 0; i < 20; i++)
     // {

@@ -18,6 +18,7 @@
 #define MAX_TOTAL_PAGES 32
 #define SHELL_PID 2 // TODO: consider deleting this define
 #define NO_FILE 0
+#define INSTRUCTFAULT 12
 #define LOADFAULT 13
 #define STOREFAULT 15
 // ADDED: to make macro selection work.
@@ -26,3 +27,4 @@
 #define SCFIFO 2
 #define NFUA 3
 #define LAPA 4
+#define BYTE_SIZE 8

@@ -46,7 +46,6 @@ void usertrap(void)
 
     // save user program counter.
     p->trapframe->epc = r_sepc();
-
     if (r_scause() == 8)
     {
         // system call
@@ -64,13 +63,13 @@ void usertrap(void)
 
         syscall();
     }
-    #ifndef NONE
-    else if (isSwapProc(p) && (r_scause() == 12 || r_scause() == LOADFAULT || r_scause() == STOREFAULT)) // ADDED: handling pagefault
+#if SELECTION != NONE
+    else if (isSwapProc(p) && (r_scause() == INSTRUCTFAULT || r_scause() == LOADFAULT || r_scause() == STOREFAULT)) // ADDED: handling pagefault
     {
         uint64 va = r_stval();
         handle_page_fault(va);
     }
-    #endif
+#endif
     else if ((which_dev = devintr()) != 0)
     {
         // ok
@@ -98,7 +97,8 @@ void usertrap(void)
 void usertrapret(void)
 {
     struct proc *p = myproc();
-
+    //printf("\ncalled %d times to update ages before returning to userspace\n",p->counter);
+    //p->counter=0;
     // we're about to switch the destination of traps from
     // kerneltrap() to usertrap(), so turn off interrupts until
     // we're back in user space, where usertrap() is correct.
@@ -172,9 +172,6 @@ void clockintr()
     acquire(&tickslock);
     ticks++;
     wakeup(&ticks);
-    #if SELECTION == NFUA || SELECTION == LAPA
-        update_ages();
-    #endif
     release(&tickslock);
 }
 

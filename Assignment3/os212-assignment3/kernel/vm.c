@@ -148,7 +148,7 @@ int mappages(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm)
             return -1;
         if (*pte & PTE_V)
             panic("remap");
-        
+
         // ADDED: add valid to a page in memory only.
         *pte = PA2PTE(pa) | perm;
         if (!(perm & PTE_PG))
@@ -226,7 +226,6 @@ uvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz)
 {
     char *mem;
     uint64 a;
-    struct proc *p = myproc(); // ADDED: done for adding the pages to the metadata.
     if (newsz < oldsz)
         return oldsz;
 
@@ -247,7 +246,7 @@ uvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz)
             return 0;
         }
         // ADDED: adding the page to the ram_page metadata
-        add_ram_page(p, a); //adding the page with address a to the process p
+        add_ram_page(myproc(), a); //adding the page with address a to the process p
     }
     return newsz;
 }
@@ -259,9 +258,6 @@ uvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz)
 uint64
 uvmdealloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz)
 {
-    // ADDED: done for removing pages from the metadata
-    struct proc *p = myproc();
-
     if (newsz >= oldsz)
         return oldsz;
 
@@ -269,11 +265,10 @@ uvmdealloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz)
     {
         int npages = (PGROUNDUP(oldsz) - PGROUNDUP(newsz)) / PGSIZE;
         uvmunmap(pagetable, PGROUNDUP(newsz), npages, 1);
-
         // ADDED: removing the pages from metadata
         for (int a = PGROUNDDOWN(oldsz); a > PGROUNDDOWN(newsz); a -= PGSIZE)
         {
-            remove_ram_page(p, a);
+            remove_ram_page(myproc(), a);
         }
     }
 

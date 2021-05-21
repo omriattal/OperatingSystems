@@ -113,6 +113,14 @@ struct ram_page
     enum page_state state;
 };
 
+// TODO: check if the change for both arrays work.
+struct reserve_page
+{
+    uint64 pa;
+    uint64 va;
+    enum page_state state;
+};
+
 // Per-process state
 struct proc
 {
@@ -137,7 +145,7 @@ struct proc
     struct file *ofile[NOFILE];  // Open files
     struct inode *cwd;           // Current directory
     char name[16];               // Process name (debugging)
-
+    int counter;
     struct file *swapFile;
 
     // int pages_in_memory;                         //number of pages in memory
@@ -147,5 +155,7 @@ struct proc
     // ADDED: page metadata
     struct swap_page swap_pages[MAX_PSYC_PAGES]; //swap pages
     struct ram_page ram_pages[MAX_PSYC_PAGES];   //ram pages
+    // TODO: check if the change for both arrays work.
+    // struct reserve_page reserve;                     // reserve for when both arrays are full
     int scfifo_out_index;
 };
