@@ -26,7 +26,6 @@ void test_read_write(char *s)
     }
     free(alloc);
 }
-
 void fork_test(char *s)
 {
     char *alloc = malloc(NPAGES * PGSIZE);
