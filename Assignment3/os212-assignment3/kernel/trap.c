@@ -63,7 +63,6 @@ void usertrap(void)
 
         syscall();
     }
-#if SELECTION != NONE
     else if (isSwapProc(p) && (r_scause() == INSTRUCTFAULT || r_scause() == LOADFAULT || r_scause() == STOREFAULT)) // ADDED: handling pagefault
     {
         p->pagefaults++;
@@ -71,7 +70,6 @@ void usertrap(void)
         if(handle_page_fault(va) < 0)
             p->killed = 1;
     }
-#endif
     else if ((which_dev = devintr()) != 0)
     {
         // ok
