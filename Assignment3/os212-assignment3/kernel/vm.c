@@ -246,7 +246,11 @@ uvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz)
             return 0;
         }
         // ADDED: adding the page to the ram_page metadata
-        add_ram_page(myproc(), a); //adding the page with address a to the process p
+        if(add_ram_page(myproc(), a) < 0){
+            kfree(mem);
+            uvmdealloc(pagetable, a, oldsz);
+            return 0;
+        }
     }
     return newsz;
 }
@@ -266,9 +270,10 @@ uvmdealloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz)
         int npages = (PGROUNDUP(oldsz) - PGROUNDUP(newsz)) / PGSIZE;
         uvmunmap(pagetable, PGROUNDUP(newsz), npages, 1);
         // ADDED: removing the pages from metadata
-        for (int a = PGROUNDDOWN(oldsz); a > PGROUNDDOWN(newsz); a -= PGSIZE)
+        for (int a = PGROUNDDOWN(oldsz - 1); a > PGROUNDDOWN(newsz); a -= PGSIZE) // CONSIDER:   
         {
-            remove_ram_page(myproc(), a);
+            if(remove_page(myproc(), a) < 0)
+                panic("uvmdealloc: couldn't remove page");
         }
     }
 

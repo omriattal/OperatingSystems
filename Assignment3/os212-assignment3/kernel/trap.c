@@ -67,7 +67,8 @@ void usertrap(void)
     else if (isSwapProc(p) && (r_scause() == INSTRUCTFAULT || r_scause() == LOADFAULT || r_scause() == STOREFAULT)) // ADDED: handling pagefault
     {
         uint64 va = r_stval();
-        handle_page_fault(va);
+        if(handle_page_fault(va) < 0)
+            p->killed = 1;
     }
 #endif
     else if ((which_dev = devintr()) != 0)

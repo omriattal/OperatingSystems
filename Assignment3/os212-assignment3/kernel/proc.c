@@ -539,6 +539,7 @@ int wait(uint64 addr)
         sleep(p, &wait_lock); //DOC: wait-sleep
     }
 }
+// ADDED: update the ages per process.
 void update_ages(struct proc *p)
 {
     p->counter++;
@@ -798,7 +799,6 @@ int find_page_in_swap(struct proc *p, int va)
 {
     for (int i = 0; i < MAX_PSYC_PAGES; i++)
     {
-        printf("swap page va = %p, looking for va %p\n",p->swap_pages[i].va, va);
         if (p->swap_pages[i].va == va)
         {
             return i;
@@ -833,7 +833,7 @@ int find_free_page_in_ram(struct proc *p)
 
 // TODO: support statistics
 // ADDED: writing the page specified by pagenum to swapfile.
-void swapout(struct proc *p, int pagenum)
+int swapout(struct proc *p, int pagenum)
 {
     // printf("process %d here with pagenum %d\n",p->pid,pagenum);
     if (pagenum < 0 || pagenum > MAX_PSYC_PAGES)
@@ -854,11 +854,13 @@ void swapout(struct proc *p, int pagenum)
     struct swap_page *swpg;
     int free_swp_idx = find_free_page_in_swap(p);
     if (free_swp_idx < 0)
-        panic("swapout: swap full");
+        return -1;
+
     swpg = &p->swap_pages[free_swp_idx];
     uint64 pa = PTE2PA(*pte);
     if (writeToSwapFile(p, (char *)pa, swpg->swap_location, PGSIZE) < 0)
-        panic("swapout: unsuccessful write to file");
+        return -1;
+
     swpg->state = PG_TAKEN;
     swpg->va = rmpg->va;
     kfree((void *)pa);
@@ -868,10 +870,11 @@ void swapout(struct proc *p, int pagenum)
     *pte |= PTE_PG; // set the flag stating the page was swapped out
     *pte &= ~PTE_V; // clear the flag stating the page is valid
     sfence_vma();   // refreshing the TLB
+    return 0;
 }
 
 // ADDED: reading page specified by pagenum from swapfile.
-void swapin(struct proc *p, int swap_targetidx, int ram_freeidx)
+int swapin(struct proc *p, int swap_targetidx, int ram_freeidx)
 {
     struct swap_page *swpg;
 
@@ -897,7 +900,11 @@ void swapin(struct proc *p, int swap_targetidx, int ram_freeidx)
 
     uint64 new_pa = (uint64)kalloc(); //Allocating a new physical address for the swapped in page.
     if (readFromSwapFile(p, (char *)new_pa, swpg->swap_location, PGSIZE) < 0)
-        panic("swapin: read from swap failed");
+    {
+        kfree((void *)new_pa);
+        return -1;
+    }
+
     rmpg->state = PG_TAKEN;
     rmpg->va = swpg->va;
     rmpg->age = INIT_AGE_VALUE;
@@ -907,11 +914,11 @@ void swapin(struct proc *p, int swap_targetidx, int ram_freeidx)
     *pte |= PTE_V;                           // set the flag stating the page is valid
     *pte = PA2PTE(new_pa) | PTE_FLAGS(*pte); // insert the new allocated pa to the pte in the correct part
     sfence_vma();                            // refreshing the TLB
+    return 0;
 }
 
 void swapin_addr(struct proc *p, uint64 pa, uint64 va, int ram_freeidx)
 {
-
     pte_t *pte = walk(p->pagetable, va, 0);
     if (pte == 0)
         panic("swapin: unallocated pte");
@@ -956,7 +963,6 @@ int choose_nfua_page(struct proc *p)
 {
     int min_age = p->ram_pages[0].age; // ? not choosing 0.
     int real_out_index = 0;
-    uint64 va = p->ram_pages[0].va;
     for (int i = 1; i < MAX_PSYC_PAGES; i++)
     {
         struct ram_page rmpg = p->ram_pages[i];
@@ -964,16 +970,50 @@ int choose_nfua_page(struct proc *p)
         {
             min_age = rmpg.age;
             real_out_index = i;
-            va = rmpg.va;
         }
     }
-    printf("Chose RAM Page %d with age %d and va %p\n", real_out_index, min_age, va);
     return real_out_index;
 }
 // ADDED: the most complex function of all time per code lines
 int choose_some_page(struct proc *p)
 {
     return 1;
+}
+// ADDED: counting ones for nao
+int count_ones(uint number)
+{
+    int count = 0;
+    while (number)
+    {
+        count += number & 1;
+        number >>= 1;
+    }
+    return count;
+}
+
+// ADDED: choose page by lapa
+int choose_lapa_page(struct proc *p)
+{
+    int min_access_count = count_ones(p->ram_pages[0].age);
+    int min_age = p->ram_pages[0].age;
+    int real_out_index = 0;
+    for (int i = 1; i < MAX_PSYC_PAGES; i++)
+    {
+        struct ram_page rmpg = p->ram_pages[i];
+        int age_count = count_ones(rmpg.age);
+        if (min_access_count > age_count)
+        {
+            min_access_count = age_count;
+            min_age = rmpg.age;
+            real_out_index = i;
+        }
+        else if (min_access_count == age_count && min_age >= rmpg.age)
+        {
+            min_age = rmpg.age;
+            real_out_index = i;
+        }
+    }
+    return real_out_index;
 }
 int choose_page_to_swap(struct proc *p)
 {
@@ -983,42 +1023,47 @@ int choose_page_to_swap(struct proc *p)
 #if SELECTION == NFUA
     return choose_nfua_page(p);
 #endif
+#if SELECTION == LAPA
+    return choose_lapa_page(p);
+#endif
 #if SELECTION == SOME
     return choose_some_page(p);
 #endif
-    return -1;
+    return -1; //! not supposed to happen!
 }
 
 // ADDED: adding ram page
-void add_ram_page(struct proc *p, uint64 va)
+int add_ram_page(struct proc *p, uint64 va)
 {
     if (!isSwapProc(p))
-        return;
+        return 0;
+
     struct ram_page *rmpg;
     int free_ram_idx;
     if ((free_ram_idx = find_free_page_in_ram(p)) < 0)
     {
         int to_swap = choose_page_to_swap(p);
-        printf("while adding, swapped page %d\n", to_swap); // TODO: delete after checking all algorithms
-        swapout(p, to_swap);
+        if (swapout(p, to_swap) < 0)
+            return -1;
         free_ram_idx = to_swap;
     }
     rmpg = &p->ram_pages[free_ram_idx];
     rmpg->va = va;
     rmpg->state = PG_TAKEN;
     rmpg->age = 0;
+    return 0;
 }
 
 // ADDED: removing ram page
-void remove_ram_page(struct proc *p, uint64 va)
+int remove_page(struct proc *p, uint64 va)
 {
     if (!isSwapProc(p))
-        return;
+        return 0;
+    
 #if SELECTION == SCFIFO
     struct ram_page free;
 #endif
-    int i;
-    for (i = 0; i < MAX_PSYC_PAGES; i++)
+    for (int i = 0; i < MAX_PSYC_PAGES; i++)
     {
         if (p->ram_pages[i].va == va && p->ram_pages[i].state == PG_TAKEN)
         {
@@ -1033,11 +1078,20 @@ void remove_ram_page(struct proc *p, uint64 va)
                 p->ram_pages[next_ram_idx(i)] = free;
             }
 #endif
+            return 0;
         }
     }
-    panic("remove_ram_pag: did not find va");
+    for (int i = 0; i < MAX_SWAP_PAGES; i++)
+    {
+        if (p->swap_pages[i].va == va && p->swap_pages[i].state == PG_TAKEN)
+        {
+            p->swap_pages[i].va = 0;
+            p->swap_pages[i].state = PG_FREE;
+            return 0;
+        }
+    }
+    return -1;
 }
-// TODO: check if the change for both arrays work.
 uint64 prepare_fulls_swap(struct proc *p, int target_idx)
 {
     struct swap_page *swpg = &p->swap_pages[target_idx];
@@ -1050,22 +1104,24 @@ uint64 prepare_fulls_swap(struct proc *p, int target_idx)
 }
 
 // ADDED: THE function of the assignment - handling pagefault!
-void handle_page_fault(uint64 va)
+int handle_page_fault(uint64 va)
 {
     struct proc *p = myproc();
     if (!isSwapProc(p))
         panic("page fault: none swap proc page fault");
+
     pte_t *pte = walk(p->pagetable, va, 0);
-    if (pte == 0) //! should not happen
-        panic("page fault: unallocated virtual address");
+    if (pte == 0 || (!(*pte & PTE_V) && !(*pte & PTE_PG)))
+    {
+        printf("segmentation fault\n");
+        return -1;
+    }
 
     if (*pte & PTE_V) //! should not happen
         panic("page fault: valid page");
 
-    if (!(*pte & PTE_PG)) //! probably will happen
-        panic("segmentation fault");
-    int target_idx = find_page_in_swap(p, PGROUNDDOWN(va));
-    printf("pagefault with page va %p\n", PGROUNDDOWN(va));
+    va = PGROUNDDOWN(va);
+    int target_idx = find_page_in_swap(p, va);
     if (target_idx < 0) //! should not happen
         panic("page fault: expected page in swap");
     uint64 pa = 0;
@@ -1073,20 +1129,27 @@ void handle_page_fault(uint64 va)
     if (free_ram_idx < 0)
     { // there is no available space in the ram
         int to_swap = choose_page_to_swap(p);
-        // TODO: check if the change for both arrays work.
         if (find_free_page_in_swap(p) < 0)
         {
             pa = prepare_fulls_swap(p, target_idx);
             target_idx = -1;
         }
-        printf("to_swap = %d\n", to_swap);
         swapout(p, to_swap); // written the page with to_swap index to the file.
         free_ram_idx = to_swap;
     }
     if (target_idx >= 0)
-        swapin(p, target_idx, free_ram_idx);
+    {
+        if (swapin(p, target_idx, free_ram_idx) < 0)
+        {
+            printf("page fault: could not swap in");
+            return -1;
+        }
+    }
     else
+    {
         swapin_addr(p, pa, va, free_ram_idx);
+    }
+    return 0;
 }
 
 // ADDED: check if a process is participating in the swap architecture

@@ -114,9 +114,9 @@ int either_copyin(void *dst, int user_src, uint64 src, uint64 len);
 void procdump(void);
 // ADDED: our functions for metadata
 int initmetadata(struct proc *p);
-void add_ram_page(struct proc *p, uint64 va);
-void remove_ram_page(struct proc *p, uint64 va);
-void handle_page_fault(uint64 va);
+int add_ram_page(struct proc *p, uint64 va);
+int remove_page(struct proc *p, uint64 va);
+int handle_page_fault(uint64 va);
 int isSwapProc(struct proc *p);
 void update_ages();
 
