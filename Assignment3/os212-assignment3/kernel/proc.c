@@ -184,6 +184,7 @@ found:
     p->state = USED;
     // ADDED: statistics, metadata
     p->scfifo_out_index = 0;
+    p->pagefaults = 0;
     // Allocate a trapframe page.
     if ((p->trapframe = (struct trapframe *)kalloc()) == 0)
     {
@@ -231,7 +232,9 @@ freeproc(struct proc *p)
     p->killed = 0;
     p->xstate = 0;
     p->state = UNUSED;
+    // ADDED: delete staticstics and metadata
     p->scfifo_out_index = 0;
+    p->pagefaults = 0;
 }
 
 // Create a user page table for a given process,
@@ -1060,9 +1063,9 @@ int remove_page(struct proc *p, uint64 va)
     if (!isSwapProc(p))
         return 0;
     
-#if SELECTION == SCFIFO
-    struct ram_page free;
-#endif
+// #if SELECTION == SCFIFO
+//     struct ram_page free;
+// #endif
     for (int i = 0; i < MAX_PSYC_PAGES; i++)
     {
         if (p->ram_pages[i].va == va && p->ram_pages[i].state == PG_TAKEN)
@@ -1070,14 +1073,14 @@ int remove_page(struct proc *p, uint64 va)
             p->ram_pages[i].va = 0;
             p->ram_pages[i].state = PG_FREE;
             p->ram_pages[i].age = 0;
-#if SELECTION == SCFIFO
-            free = p->ram_pages[i];
-            for (; p->ram_pages[next_ram_idx(i)].state == PG_TAKEN && next_ram_idx(i) != p->scfifo_out_index; i = next_ram_idx(i))
-            {
-                p->ram_pages[i] = p->ram_pages[next_ram_idx(i)];
-                p->ram_pages[next_ram_idx(i)] = free;
-            }
-#endif
+// #if SELECTION == SCFIFO
+//             free = p->ram_pages[i];
+//             for (; p->ram_pages[next_ram_idx(i)].state == PG_TAKEN && next_ram_idx(i) != p->scfifo_out_index; i = next_ram_idx(i))
+//             {
+//                 p->ram_pages[i] = p->ram_pages[next_ram_idx(i)];
+//                 p->ram_pages[next_ram_idx(i)] = free;
+//             }
+// #endif
             return 0;
         }
     }
@@ -1160,4 +1163,7 @@ inline int isSwapProc(struct proc *p)
 #else
     return (strncmp(p->name, "initcode", sizeof(p->name)) != 0) && (strncmp(p->name, "init", sizeof(p->name)) != 0) && (strncmp(p->parent->name, "init", sizeof(p->parent->name)) != 0);
 #endif
+}
+int get_pagefaults() {
+    return myproc()->pagefaults;
 }

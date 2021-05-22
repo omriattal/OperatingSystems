@@ -66,6 +66,7 @@ void usertrap(void)
 #if SELECTION != NONE
     else if (isSwapProc(p) && (r_scause() == INSTRUCTFAULT || r_scause() == LOADFAULT || r_scause() == STOREFAULT)) // ADDED: handling pagefault
     {
+        p->pagefaults++;
         uint64 va = r_stval();
         if(handle_page_fault(va) < 0)
             p->killed = 1;

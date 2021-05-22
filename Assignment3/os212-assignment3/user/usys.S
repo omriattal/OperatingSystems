@@ -105,3 +105,8 @@ uptime:
  li a7, SYS_uptime
  ecall
  ret
+.global get_pagefaults
+get_pagefaults:
+ li a7, SYS_get_pagefaults
+ ecall
+ ret

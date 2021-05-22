@@ -119,8 +119,44 @@ void benchmark(char *s)
     free(array);
     printf("total time: %d\n",uptime() - up);
 }
-// run each test in its own process. run returns 1 if child's exit()
-// indicates success.
+void segmentation_test(char *s) {
+    int pid = fork();
+    if (pid == 0) {
+        char *alloc = malloc(NPAGES*PGSIZE);
+        alloc[(NPAGES + 7)*PGSIZE] = 'a';
+        exit(0);
+    } else {
+        int status;
+        wait(&status);
+        if (status >= 0) {
+            exit(1);
+        } else if (status < 0) {
+            return;
+        }
+    }
+}
+void pagefaults_test(char *s) {
+    int pagefaults = 0;
+    char *alloc = malloc(NPAGES * PGSIZE);
+    for (int i = 0; i < NPAGES; i++)
+    {
+        alloc[i * PGSIZE] = 'a' + i;
+    }
+    if (pagefaults == get_pagefaults()) {
+        exit(1);
+    }
+    pagefaults = get_pagefaults();
+    for (int i = 0; i < NPAGES; i++)
+    {
+        if (alloc[i*PGSIZE] != 'a'+i) {
+            exit(1);
+        }
+    }
+    if (pagefaults == get_pagefaults()) {
+        exit(1);
+    }
+
+}
 int run(void f(char *), char *s)
 {
     int pid;
@@ -157,7 +193,9 @@ int main(int argc, char *argv[])
         {test_read_write, "read_write_test"},
         {fork_test, "fork_test"},
         {full_swap_test, "full_swap_test"},
-        {benchmark, "benchmark"},
+        {segmentation_test,"segmentation_test"},
+        {pagefaults_test, "pagefault_test"},
+        {benchmark, "benchmark"}, 
         {0, 0},
     };
 
