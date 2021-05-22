@@ -155,7 +155,5 @@ struct proc
     // ADDED: page metadata
     struct swap_page swap_pages[MAX_PSYC_PAGES]; //swap pages
     struct ram_page ram_pages[MAX_PSYC_PAGES];   //ram pages
-    // TODO: check if the change for both arrays work.
-    // struct reserve_page reserve;                     // reserve for when both arrays are full
     int scfifo_out_index;
 };
