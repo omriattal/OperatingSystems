@@ -114,7 +114,6 @@ struct sigaction
 struct thread
 {
     struct spinlock lock;
-
     int cid;                     // Thread id in reference to it's brother threads. 
     int tid;                     // Thread id in reference to all kernel threads.
     enum threadstate state;      // Thread state

@@ -26,6 +26,7 @@ void test_read_write(char *s)
     }
     free(alloc);
 }
+
 void fork_test(char *s)
 {
     char *alloc = malloc(NPAGES * PGSIZE);
@@ -59,9 +60,10 @@ void fork_test(char *s)
     }
     free(alloc);
 }
+
 void full_swap_test(char *s)
 {
-    int proc_size = ((uint64) sbrk(0)) & 0xFFFFFFFF;
+    int proc_size = ((uint64)sbrk(0)) & 0xFFFFFFFF;
     int allocsize = 32 * PGSIZE - proc_size;
     char *alloc = sbrk(allocsize);
     for (int i = 0; i < NPAGES; i++)
@@ -70,92 +72,122 @@ void full_swap_test(char *s)
     }
     sbrk(-allocsize);
 }
+
 void benchmark(char *s)
 {
     int up = uptime();
-    char *alloc = malloc(NPAGES*PGSIZE);
+    char *alloc = malloc(NPAGES * PGSIZE);
     for (int i = 0; i < NPAGES; i++)
     {
         alloc[i * PGSIZE] = 'a' + i;
+        sleep(1);
     }
-    for (int i = NPAGES-1; i >= 0; i--)
+    for (int i = NPAGES - 1; i >= 0; i--)
     {
-        if (alloc[i * PGSIZE] != 'a' + i) {
+        if (alloc[i * PGSIZE] != 'a' + i)
+        {
             exit(1);
         }
         alloc[i * PGSIZE] = 'a' + i;
+        sleep(1);
     }
     for (int i = 0; i < 5; i++)
     {
         alloc[i * PGSIZE] = 'a' + i;
+        sleep(1);
     }
     for (int i = 0; i < 5; i++)
     {
         alloc[i * PGSIZE] = 'a' + i;
+        sleep(1);
     }
     for (int i = 0; i < 5; i++)
     {
         alloc[i * PGSIZE] = 'a' + i;
+        sleep(1);
     }
     free(alloc);
-    int **array = (int **)malloc(100*sizeof(int*));
-    for(int i = 0; i < 100; i++) {
+    int **array = (int **)malloc(100 * sizeof(int *));
+    for (int i = 0; i < 100; i++)
+    {
         array[i] = malloc(100 * sizeof(int));
+        sleep(1);
     }
-    for (int i = 0; i < 100; i++) {
-       for (int j = 0; j < 100; j++) {
-           array[i][j] = 0;
-       }
+    for (int i = 0; i < 100; i++)
+    {
+        for (int j = 0; j < 100; j++)
+        {
+            array[i][j] = 0;
+        }
+        sleep(1);
     }
-    for (int j = 0; j < 100; j++) {
-       for (int i = 0; i < 100; i++) {
-           array[i][j] = 0;
-       }
+    for (int j = 0; j < 100; j++)
+    {
+        for (int i = 0; i < 100; i++)
+        {
+            array[i][j] = 0;
+        }
+        sleep(1);
     }
-    for(int i = 0; i < 100; i++) {
-       free(array[i]);
+    for (int i = 0; i < 100; i++)
+    {
+        free(array[i]);
+        sleep(1);
     }
     free(array);
-    printf("total time: %d\n",uptime() - up);
+    printf("total time: %d\n", uptime() - up);
 }
-void segmentation_test(char *s) {
+
+void segmentation_fault_test(char *s)
+{
     int pid = fork();
-    if (pid == 0) {
-        char *alloc = malloc(NPAGES*PGSIZE);
-        alloc[(NPAGES + 7)*PGSIZE] = 'a';
+    if (pid == 0)
+    {
+        char *alloc = malloc(NPAGES * PGSIZE);
+        alloc[(NPAGES + 7) * PGSIZE] = 'a';
         exit(0);
-    } else {
+    }
+    else
+    {
         int status;
         wait(&status);
-        if (status >= 0) {
+        if (status >= 0)
+        {
             exit(1);
-        } else if (status < 0) {
+        }
+        else if (status < 0)
+        {
             return;
         }
     }
 }
-void pagefaults_test(char *s) {
+
+void pagefaults_test(char *s)
+{
     int pagefaults = 0;
     char *alloc = malloc(NPAGES * PGSIZE);
     for (int i = 0; i < NPAGES; i++)
     {
         alloc[i * PGSIZE] = 'a' + i;
     }
-    if (pagefaults == get_pagefaults()) {
+    if (pagefaults == get_pagefaults())
+    {
         exit(1);
     }
     pagefaults = get_pagefaults();
     for (int i = 0; i < NPAGES; i++)
     {
-        if (alloc[i*PGSIZE] != 'a'+i) {
+        if (alloc[i * PGSIZE] != 'a' + i)
+        {
             exit(1);
         }
     }
-    if (pagefaults == get_pagefaults()) {
+    if (pagefaults == get_pagefaults())
+    {
         exit(1);
     }
-
 }
+
 int run(void f(char *), char *s)
 {
     int pid;
@@ -182,6 +214,7 @@ int run(void f(char *), char *s)
         return xstatus == 0;
     }
 }
+
 int main(int argc, char *argv[])
 {
     struct test
@@ -192,9 +225,9 @@ int main(int argc, char *argv[])
         {test_read_write, "read_write_test"},
         {fork_test, "fork_test"},
         {full_swap_test, "full_swap_test"},
-        {segmentation_test,"segmentation_test"},
+        {segmentation_fault_test, "segmentation_fault_test"},
         {pagefaults_test, "pagefault_test"},
-        {benchmark, "benchmark"}, 
+        {benchmark, "benchmark"},
         {0, 0},
     };
 
@@ -216,103 +249,3 @@ int main(int argc, char *argv[])
         exit(0);
     }
 }
-/**
- * +#include "types.h"
-+#include "stat.h"
-+#include "user.h"
-+#include "syscall.h"
-+
-+#define PGSIZE 4096
-+#define FREE_SPACE_ON_RAM 12
-+void waitForUserToAnalyze();
-+
-+// Global Variables
-+int i,j,pid;
-+char* pages[25];
-+char buffer[10];
-+
-+
-+
-+// -------- MAIN --------
-+
-+int main(int argc, char *argv[]) {
-+
-+    // ___ Paging Framework Testing ___
-+    printf(1, "Allocating pages..\n");
-+    for(i = 0; i < FREE_SPACE_ON_RAM; i++){
-+        pages[i] = sbrk(PGSIZE);
-+        printf(1, "page #%d is at address: %x\n", i, pages[i]);
-+    }
-+    printf(1, "Now ram is full\n"); 
-+    waitForUserToAnalyze();
-+    
-+    printf(1, "Try to access pages 0,1,2\n");
-+    pages[0][0] = 1;
-+    pages[1][0] = 1;
-+    pages[2][0] = 1;
-+    printf(1, "Not expecting page faults,all pages are on the ram\n");
-+    waitForUserToAnalyze();
-+    
-+    printf(1, "Allocating more pages,expecting page faults in all\n"); 
-+    for(j = 0; j<FREE_SPACE_ON_RAM; j++){
-+    	printf(1, "page #%d at address: %x\n", i, pages[i]);
-+        pages[i] = sbrk(PGSIZE);
-+        i++;
-+    }
-+
-+    ();
-+
-+    printf(1, "Try to access pages 0,1,2,5,14\n");
-+    pages[0][0] = 1;
-+    pages[1][0] = 1;
-+    pages[2][0] = 1;
-+    pages[5][0] = 1;
-+    pages[14][0] = 1;
-+    waitForUserToAnalyze();
-+
-+
-+    // ============= Fork =============
-+    printf(1, "Fork..\n");
-+    pid = fork();
-+    if (pid != 0){
-+        sleep(2);
-+        wait();
-+        printf(1, "Father - success\n");
-+        waitForUserToAnalyze();
-+    }
-+    else {
-+        //son
-+        printf(1, "Child trying to access pages 0,1,2,5,14\n");
-+        pages[0][0] = 1;
-+        pages[1][0] = 1;
-+        pages[2][0] = 1;
-+        pages[5][0] = 1;
-+        pages[14][0] = 1;
-+        printf(1, "Not expecting page faults\n");
-+        waitForUserToAnalyze();
-+        exit();
-+    }
-+
-+	
-+    // ============= Free Pages =============
-+	printf(1, "Free pages..\n");
-+	for(i = 0; i < (FREE_SPACE_ON_RAM*2); i++){
-+		pages[i] = sbrk(-PGSIZE);
-+		printf(1, "page #%d at address: %x\n", i, pages[i]);
-+	}
-+
-+	printf(1, "tests ended successfully\n");
-+	exit();
-+	return 0;
-+}
-+
-+
-+// -------- Helper Function --------
-+void waitForUserToAnalyze()
-+{
-+	printf(1, "Analyze using <CTRL+P> or press ENTER to continue\n");
-+	gets(buffer,3);
-+}
-+
-+
-*/

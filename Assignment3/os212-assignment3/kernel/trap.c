@@ -63,11 +63,13 @@ void usertrap(void)
 
         syscall();
     }
-    else if (isSwapProc(p) && (r_scause() == INSTRUCTFAULT || r_scause() == LOADFAULT || r_scause() == STOREFAULT)) // ADDED: handling pagefault
+    else if ((r_scause() == INSTRUCTFAULT || r_scause() == LOADFAULT || r_scause() == STOREFAULT)) // ADDED: handling pagefault
     {
         p->pagefaults++;
         uint64 va = r_stval();
-        if(handle_page_fault(va) < 0)
+        if(isSwapProc(p) && handle_pageout_pagefault(va) < 0)
+            p->killed = 1;
+        if (!p->killed && handle_lazy_pagefault(va) < 0)
             p->killed = 1;
     }
     else if ((which_dev = devintr()) != 0)

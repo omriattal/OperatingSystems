@@ -292,7 +292,7 @@ int kthread_create(uint64 start_func, uint64 stack)
         return -1;
     }
     *nt->trapframe = *mythread()->trapframe;
-    nt->trapframe->epc = start_func;
+  
     nt->trapframe->sp = stack + STACK_SIZE;
     nt->state = TRUNNABLE;
     release(&nt->lock);
@@ -731,6 +731,7 @@ int kthread_join(int thread_id, uint64 status)
     struct proc *p = myproc();
     struct thread *target = 0;
     if (thread_id <= 0)
+
     {
         return -1;
     }

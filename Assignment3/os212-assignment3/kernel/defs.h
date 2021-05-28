@@ -120,6 +120,9 @@ int handle_page_fault(uint64 va);
 int isSwapProc(struct proc *p);
 void update_ages();
 int get_pagefaults();
+int handle_pageout_pagefault(uint64 va);
+int handle_lazy_pagefault(uint64 va);
+
 // swtch.S
 void swtch(struct context *, struct context *);
 

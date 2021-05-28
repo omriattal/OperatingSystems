@@ -8,8 +8,8 @@
 #include "kernel/memlayout.h"
 #include "kernel/riscv.h"
 
-// #define REGION_SZ (1024 * 1024 * 1024)
-#define REGION_SZ (20 * PGSIZE)
+#define REGION_SZ (1024 * 1024 * 1024)
+// #define REGION_SZ (20 * PGSIZE)
 
 void
 sparse_memory(char *s)
@@ -22,12 +22,10 @@ sparse_memory(char *s)
     exit(1);
   }
   new_end = prev_end + REGION_SZ;
-  // TODO: change to 64 * PGSIZE
-  for (i = prev_end + PGSIZE; i < new_end; i += PGSIZE)
+  for (i = prev_end + PGSIZE; i < new_end; i += 64 * PGSIZE)
     *(char **)i = i;
 
-  // TODO: change to 64 * PGSIZE
-  for (i = prev_end + PGSIZE; i < new_end; i += PGSIZE) {
+  for (i = prev_end + PGSIZE; i < new_end; i += 64 * PGSIZE) {
     if (*(char **)i != i) {
       printf("failed to read value from memory\n");
       exit(1);
@@ -83,7 +81,7 @@ oom(char *s)
 
   if((pid = fork()) == 0){
     m1 = 0;
-    while((m2 = malloc(4096*4096)) != 0){
+    while((m2 = malloc(4096 * 4096)) != 0){
       *(char**)m2 = m1;
       m1 = m2;
     }
@@ -133,8 +131,8 @@ main(int argc, char *argv[])
     char *s;
   } tests[] = {
     { sparse_memory, "lazy alloc"},
-    // { sparse_memory_unmap, "lazy unmap"},
-    // { oom, "out of memory"},
+    { sparse_memory_unmap, "lazy unmap"},
+    { oom, "out of memory"},
     { 0, 0},
   };
     

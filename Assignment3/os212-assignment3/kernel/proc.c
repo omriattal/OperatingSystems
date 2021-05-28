@@ -11,7 +11,7 @@
 #if SELECTION == LAPA
 #define INIT_AGE_VALUE 0xFFFFFFFF
 #elif SELECTION == NFUA
-#define INIT_AGE_VALUE 1 << 31 // TODO: consider
+#define INIT_AGE_VALUE 0 // TODO: consider
 #else
 #define INIT_AGE_VALUE 0
 #endif
@@ -847,7 +847,6 @@ int find_free_page_in_ram(struct proc *p)
     return -1;
 }
 
-// TODO: support statistics
 // ADDED: writing the page specified by pagenum to swapfile.
 int swapout(struct proc *p, int pagenum)
 {
@@ -878,7 +877,7 @@ int swapout(struct proc *p, int pagenum)
     {
         uint64 pa = PTE2PA(*pte);
         if (writeToSwapFile(p, (char *)pa, swpg->swap_location, PGSIZE) < 0)
-            return -1;    
+            return -1;
         kfree((void *)pa);
     }
 
@@ -951,13 +950,16 @@ void swapin_addr(struct proc *p, uint64 pa, uint64 va, int ram_freeidx)
     struct ram_page *rmpg = &p->ram_pages[ram_freeidx];
     if (rmpg->state == PG_TAKEN)
         panic("swapin: ram page taken");
+    if (!(*pte & PTE_LZ))
+    {
+        *pte |= PTE_V; // set the flag stating the page is valid
+        *pte = PA2PTE(pa) | PTE_FLAGS(*pte); // insert the new allocated pa to the pte in the correct part
+    }
 
     rmpg->state = PG_TAKEN;
     rmpg->va = va;
-    rmpg->age = INIT_AGE_VALUE;                 // TODO: consider
+    rmpg->age = INIT_AGE_VALUE;          // TODO: consider
     *pte &= ~PTE_PG;                     // clear the flag stating the page was swapped out
-    *pte |= PTE_V;                       // set the flag stating the page is valid
-    *pte = PA2PTE(pa) | PTE_FLAGS(*pte); // insert the new allocated pa to the pte in the correct part
     sfence_vma();                        // refreshing the TLB
 }
 // ADDED: the main function of handling page fault
@@ -1080,10 +1082,10 @@ int remove_page(struct proc *p, uint64 va)
 {
     if (!isSwapProc(p))
         return 0;
-    
-// #if SELECTION == SCFIFO
-//     struct ram_page free;
-// #endif
+
+    // #if SELECTION == SCFIFO
+    //     struct ram_page free;
+    // #endif
     for (int i = 0; i < MAX_PSYC_PAGES; i++)
     {
         if (p->ram_pages[i].va == va && p->ram_pages[i].state == PG_TAKEN)
@@ -1091,14 +1093,14 @@ int remove_page(struct proc *p, uint64 va)
             p->ram_pages[i].va = 0;
             p->ram_pages[i].state = PG_FREE;
             p->ram_pages[i].age = 0;
-// #if SELECTION == SCFIFO
-//             free = p->ram_pages[i];
-//             for (; p->ram_pages[next_ram_idx(i)].state == PG_TAKEN && next_ram_idx(i) != p->scfifo_out_index; i = next_ram_idx(i))
-//             {
-//                 p->ram_pages[i] = p->ram_pages[next_ram_idx(i)];
-//                 p->ram_pages[next_ram_idx(i)] = free;
-//             }
-// #endif
+            // #if SELECTION == SCFIFO
+            //             free = p->ram_pages[i];
+            //             for (; p->ram_pages[next_ram_idx(i)].state == PG_TAKEN && next_ram_idx(i) != p->scfifo_out_index; i = next_ram_idx(i))
+            //             {
+            //                 p->ram_pages[i] = p->ram_pages[next_ram_idx(i)];
+            //                 p->ram_pages[next_ram_idx(i)] = free;
+            //             }
+            // #endif
             return 0;
         }
     }
@@ -1116,20 +1118,87 @@ int remove_page(struct proc *p, uint64 va)
 uint64 prepare_fulls_swap(struct proc *p, int target_idx)
 {
     struct swap_page *swpg = &p->swap_pages[target_idx];
-    uint64 new_pa = (uint64)kalloc();
-    if (readFromSwapFile(p, (char *)new_pa, swpg->swap_location, PGSIZE) < 0)
-        panic("swapin: read from swap failed");
+    pte_t *pte = walk(p->pagetable, swpg->va, 0);
+    uint64 new_pa = 0;
+    if(!(*pte & PTE_LZ)){
+        new_pa = (uint64)kalloc();
+        if (readFromSwapFile(p, (char *)new_pa, swpg->swap_location, PGSIZE) < 0)
+            panic("swapin: read from swap failed");
+    }
     swpg->va = 0;
     swpg->state = PG_FREE;
     return new_pa;
 }
 
-// ADDED: THE function of the assignment - handling pagefault!
-int handle_page_fault(uint64 va)
+// // ADDED: THE function of the assignment - handling pagefault!
+// int handle_page_fault(uint64 va)
+// {
+//     struct proc *p = myproc();
+//     if (!isSwapProc(p))
+//         panic("page fault: none swap proc page fault");
+
+//     pte_t *pte = walk(p->pagetable, va, 0);
+//     if (pte == 0 || (!(*pte & PTE_V) && !(*pte & PTE_PG) && !(*pte & PTE_LZ)))
+//     {
+//         printf("segmentation fault\n");
+//         return -1;
+//     }
+
+//     if (*pte & PTE_V) //! should not happen
+//         panic("page fault: valid page");
+
+//     va = PGROUNDDOWN(va);
+//     if (*pte & PTE_PG)
+//     {
+//         int target_idx = find_page_in_swap(p, va);
+//         if (target_idx < 0) //! should not happen
+//             panic("page fault: expected page in swap");
+//         uint64 pa = 0;
+//         int free_ram_idx = find_free_page_in_ram(p);
+//         if (free_ram_idx < 0)
+//         { // there is no available space in the ram
+//             int to_swap = choose_page_to_swap(p);
+//             if (find_free_page_in_swap(p) < 0)
+//             {
+//                 pa = prepare_fulls_swap(p, target_idx);
+//                 target_idx = -1;
+//             }
+//             swapout(p, to_swap); // written the page with to_swap index to the file.
+//             free_ram_idx = to_swap;
+//         }
+//         if (target_idx >= 0)
+//         {
+//             if (swapin(p, target_idx, free_ram_idx) < 0)
+//             {
+//                 printf("page fault: could not swap in");
+//                 return -1;
+//             }
+//         }
+//         else
+//         {
+//             swapin_addr(p, pa, va, free_ram_idx);
+//         }
+//     }
+//     if (*pte & PTE_LZ)
+//     {
+//         // allocate physical address for a lazy allocation
+//         char *mem = kalloc();
+//         if (mem == 0)
+//             panic("page fault: failed to resolve lazy allocation");
+//         memset(mem, 0, PGSIZE);
+
+//         *pte |= PTE_V;
+//         *pte &= ~PTE_LZ;
+//         *pte = PA2PTE(mem) | PTE_FLAGS(*pte);
+//         sfence_vma(); // refreshing the TLB
+//     }
+//     return 0;
+// }
+int handle_pageout_pagefault(uint64 va)
 {
     struct proc *p = myproc();
     if (!isSwapProc(p))
-        panic("page fault: none swap proc page fault");
+        panic("page fault PG: none swap proc page fault");
 
     pte_t *pte = walk(p->pagetable, va, 0);
     if (pte == 0 || (!(*pte & PTE_V) && !(*pte & PTE_PG) && !(*pte & PTE_LZ)))
@@ -1139,54 +1208,71 @@ int handle_page_fault(uint64 va)
     }
 
     if (*pte & PTE_V) //! should not happen
-        panic("page fault: valid page");
+        panic("page fault PG: valid page");
+    if (!(*pte & PTE_PG))
+        return 0;
 
     va = PGROUNDDOWN(va);
-    if (*pte & PTE_PG) {
-        int target_idx = find_page_in_swap(p, va);
-        if (target_idx < 0) //! should not happen
-            panic("page fault: expected page in swap");
-        uint64 pa = 0;
-        int free_ram_idx = find_free_page_in_ram(p);
-        if (free_ram_idx < 0)
-        { // there is no available space in the ram
-            int to_swap = choose_page_to_swap(p);
-            if (find_free_page_in_swap(p) < 0)
-            {
-                pa = prepare_fulls_swap(p, target_idx);
-                target_idx = -1;
-            }
-            swapout(p, to_swap); // written the page with to_swap index to the file.
-            free_ram_idx = to_swap;
-        }
-        if (target_idx >= 0)
+    int target_idx = find_page_in_swap(p, va);
+    if (target_idx < 0) //! should not happen
+        panic("page fault PG: expected page in swap");
+    uint64 pa = 0;
+    int free_ram_idx = find_free_page_in_ram(p);
+    if (free_ram_idx < 0)
+    { // there is no available space in the ram
+        int to_swap = choose_page_to_swap(p);
+        if (find_free_page_in_swap(p) < 0)
         {
-            if (swapin(p, target_idx, free_ram_idx) < 0)
-            {
-                printf("page fault: could not swap in");
-                return -1;
-            }
+            pa = prepare_fulls_swap(p, target_idx);
+            target_idx = -1;
         }
-        else
+        swapout(p, to_swap); // written the page with to_swap index to the file.
+        free_ram_idx = to_swap;
+    }
+    if (target_idx >= 0)
+    {
+        if (swapin(p, target_idx, free_ram_idx) < 0)
         {
-            swapin_addr(p, pa, va, free_ram_idx);
+            printf("page fault PG: could not swap in");
+            return -1;
         }
     }
-    if (*pte & PTE_LZ) {
-        // allocate physical address for a lazy allocation
-        char *mem = kalloc();
-        if (mem == 0)
-            panic("page fault: failed to resolve lazy allocation");
-        memset(mem, 0, PGSIZE);
-        
-        *pte |= PTE_V;
-        *pte &= ~PTE_LZ;
-        *pte = PA2PTE(mem) | PTE_FLAGS(*pte);
-        sfence_vma();    // refreshing the TLB
+    else
+    {
+        swapin_addr(p, pa, va, free_ram_idx);
     }
     return 0;
 }
+int handle_lazy_pagefault(uint64 va)
+{
+    struct proc *p = myproc();
+    pte_t *pte;
+    if (va >= MAXVA || (pte = walk(p->pagetable, va, 0)) == 0 || (!(*pte & PTE_V) && !(*pte & PTE_LZ)))
+    {
+        printf("segmentation fault\n");
+        return -1;
+    }
 
+    if(!(*pte & PTE_LZ))
+        return 0;
+    
+    if (*pte & PTE_V) //! should not happen
+        panic("page fault lazy: valid page");
+    if (!(*pte & PTE_PG))
+    {
+        // allocate physical address for a lazy allocation
+        char *mem = kalloc();
+        if (mem == 0)
+            return -1;
+        memset(mem, 0, PGSIZE);
+
+        *pte |= PTE_V;
+        *pte &= ~PTE_LZ;
+        *pte = PA2PTE(mem) | PTE_FLAGS(*pte);
+        sfence_vma(); // refreshing the TLB
+    }
+    return 0;
+}
 // ADDED: check if a process is participating in the swap architecture
 inline int isSwapProc(struct proc *p)
 {
@@ -1196,6 +1282,7 @@ inline int isSwapProc(struct proc *p)
     return (strncmp(p->name, "initcode", sizeof(p->name)) != 0) && (strncmp(p->name, "init", sizeof(p->name)) != 0) && (strncmp(p->parent->name, "init", sizeof(p->parent->name)) != 0);
 #endif
 }
-int get_pagefaults() {
+int get_pagefaults()
+{
     return myproc()->pagefaults;
 }
