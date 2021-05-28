@@ -63,8 +63,9 @@ void usertrap(void)
 
         syscall();
     }
-    else if ((r_scause() == INSTRUCTFAULT || r_scause() == LOADFAULT || r_scause() == STOREFAULT)) // ADDED: handling pagefault
+    else if ((r_scause() == INSTRUCTFAULT || r_scause() == LOADFAULT || r_scause() == STOREFAULT) && r_stval() < MAXVA) // ADDED: handling pagefault
     {
+        
         p->pagefaults++;
         uint64 va = r_stval();
         if(isSwapProc(p) && handle_pageout_pagefault(va) < 0)

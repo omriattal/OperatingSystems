@@ -1247,7 +1247,7 @@ int handle_lazy_pagefault(uint64 va)
 {
     struct proc *p = myproc();
     pte_t *pte;
-    if (va >= MAXVA || (pte = walk(p->pagetable, va, 0)) == 0 || (!(*pte & PTE_V) && !(*pte & PTE_LZ)))
+    if ((pte = walk(p->pagetable, va, 0)) == 0 || (!(*pte & PTE_V) && !(*pte & PTE_LZ)))
     {
         printf("segmentation fault\n");
         return -1;
